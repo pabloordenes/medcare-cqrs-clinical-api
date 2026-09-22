@@ -10,7 +10,7 @@ public class Patient
     public DateTime DateOfBirth { get; private set; }
     public string Gender { get; private set; } = string.Empty;
     public string? Address { get; private set; }
-    public string? Neighborhood { get; private set; }
+    public string? Neighbourhood { get; private set; }
     public string Phone { get; private set; } = string.Empty;
     public string? Email { get; private set; }
     public int NoShowHistoryCount { get; private set; }
@@ -20,7 +20,7 @@ public class Patient
 
     private Patient(Guid id, Guid userId, string rut, 
         string firstName, string lastName, DateTime dateOfBirth,
-        string gender, string address, string neighborhood, string phone, 
+        string gender, string address, string neighbourhood, string phone, 
         string? email, int noShowHistoryCount)
     {
         Id = id;
@@ -33,14 +33,14 @@ public class Patient
         Phone = phone;
         Email = email;
         Address =  address;
-        Neighborhood = neighborhood;
+        Neighbourhood = neighbourhood;
         NoShowHistoryCount = noShowHistoryCount;
         CreatedAt = DateTimeOffset.UtcNow;
     }
     
     public static Patient Create(Guid userId, string rut, string firstName, 
         string lastName, DateTime dateOfBirth, string gender, string phone, string? email = null,
-        string? address = null, string? neighborhood = null)
+        string? address = null, string? neighbourhood = null)
     {
         if (userId == Guid.Empty)
             throw new ArgumentException("Debe vincularse a un usuario de Supabase Auth.");
@@ -67,7 +67,7 @@ public class Patient
             phone,
             email,
             address,
-            neighborhood,
+            neighbourhood,
             0);
     }
 
