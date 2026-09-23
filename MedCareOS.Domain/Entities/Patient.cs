@@ -13,15 +13,14 @@ public class Patient
     public string? Neighbourhood { get; private set; }
     public string Phone { get; private set; } = string.Empty;
     public string? Email { get; private set; }
-    public int NoShowHistoryCount { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
     private Patient() { } // ef core
 
     private Patient(Guid id, Guid userId, string rut, 
         string firstName, string lastName, DateTime dateOfBirth,
-        string gender, string address, string neighbourhood, string phone, 
-        string? email, int noShowHistoryCount)
+        string gender, string? address, string? neighbourhood, string phone, 
+        string? email)
     {
         Id = id;
         UserId = userId;
@@ -34,7 +33,6 @@ public class Patient
         Email = email;
         Address =  address;
         Neighbourhood = neighbourhood;
-        NoShowHistoryCount = noShowHistoryCount;
         CreatedAt = DateTimeOffset.UtcNow;
     }
     
@@ -64,15 +62,9 @@ public class Patient
             lastName,
             dateOfBirth,
             gender,
-            phone,
-            email,
             address,
             neighbourhood,
-            0);
-    }
-
-    public void IncrementNoShowHistory()
-    {
-        NoShowHistoryCount++;
+            phone,
+            email);
     }
 }
