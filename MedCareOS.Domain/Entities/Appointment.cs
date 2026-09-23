@@ -15,6 +15,8 @@ public class Appointment
     public string? RiskBand { get; private set; }
     public string? SchedulingSource { get; private set; }
     public bool? ActualAttendance { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset UpdatedAt { get; private set; }
     
 
     private Appointment() { } // ef
@@ -37,9 +39,11 @@ public class Appointment
         RiskBand = riskBand;
         SchedulingSource = schedulingSource;
         ActualAttendance = actualAttendance;
+        CreatedAt = DateTimeOffset.UtcNow;
+        UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    public static Appointment Create(Guid scheduleBlockId, Guid patientId, string  symptomsRaw, string schedulingSource)
+    public static Appointment Create(Guid scheduleBlockId, Guid patientId, string  symptomsRaw, string schedulingSource = "paciente")
     {
         if (patientId == Guid.Empty)
             throw new InvalidOperationException("Debes incluir un paciente.");
@@ -68,5 +72,12 @@ public class Appointment
         
         NoShowRiskScore = noShowRiskScore;
         RiskBand = band;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void ChangeStatus(AppointmentStatus newStatus)
+    {
+        Status = newStatus;
+        UpdatedAt = DateTimeOffset.UtcNow;
     }
 }
