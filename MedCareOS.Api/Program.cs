@@ -1,5 +1,8 @@
 using MassTransit;
+using MedCareOS.Domain.Repositories;
+using MedCareOS.Infrastructure.Persistence.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,6 +57,17 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddAuthorization();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+                       ?? throw new InvalidOperationException("La cadena de conexión 'DefaultConnection' no existe.");
+
+builder.Services.AddDbContext<MedCareOS.Infrastructure.Persistence.ApplicationDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+// repositorios & unit of work
+builder.Services.AddScoped<IPatientRepository, PatientRepository>();
+builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ═════════════════════════════════════════════════════════════════
 // PIPELINE HTTP
