@@ -15,9 +15,9 @@ public class AppointmentsController : ControllerBase
     {
         _sender = sender;
     }
-
-    [HttpPost]
+    
     [Authorize]
+    [HttpPost]
     public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentCommand command,
         CancellationToken cancellationToken)
     {
