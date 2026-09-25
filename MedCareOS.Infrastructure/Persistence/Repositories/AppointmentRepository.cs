@@ -1,5 +1,6 @@
 ﻿using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace MedCareOS.Infrastructure.Persistence.Repositories;
 
@@ -16,5 +17,10 @@ public class AppointmentRepository : IAppointmentRepository
     {
         await _dbContext.Appointments.AddAsync(appointment, cancellationToken);
         
+    }
+
+    public async Task<Appointment?> GetAppointmentByIdAsync(Guid appointmentId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Appointments.FirstOrDefaultAsync(x => x.Id == appointmentId, cancellationToken);
     }
 }
