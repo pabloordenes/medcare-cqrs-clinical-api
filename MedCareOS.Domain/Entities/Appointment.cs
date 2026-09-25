@@ -83,4 +83,13 @@ public class Appointment
         Status = AppointmentStatus.InProgress;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
+
+    public void FinishConsultation()
+    {
+        if (Status is not AppointmentStatus.InProgress)
+            throw new InvalidOperationException("No puedes finalizar una cita que no este en curso.");
+        
+        Status = AppointmentStatus.Finished;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }
