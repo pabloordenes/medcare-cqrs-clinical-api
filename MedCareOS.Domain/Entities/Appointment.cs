@@ -75,9 +75,12 @@ public class Appointment
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    public void ChangeStatus(AppointmentStatus newStatus)
+    public void StartConsultation()
     {
-        Status = newStatus;
+        if (Status is not AppointmentStatus.Scheduled and not AppointmentStatus.Confirmed)
+            throw new InvalidOperationException("No puedes iniciar una cita pasada o cancelada.");
+        
+        Status = AppointmentStatus.InProgress;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 }
