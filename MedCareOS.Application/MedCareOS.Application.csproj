@@ -12,6 +12,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\MedCareOS.Domain\MedCareOS.Domain.csproj" />
+	  <ProjectReference Include="..\MedCareOS.Infrastructure\MedCareOS.Infrastructure.csproj" />
     </ItemGroup>
 
 </Project>
