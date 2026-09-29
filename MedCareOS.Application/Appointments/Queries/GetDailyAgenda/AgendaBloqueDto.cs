@@ -12,6 +12,6 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
         DateTimeOffset FechaFin,
         string Disponibilidad,
         Guid? CitaId,
-        string PacienteNombre,
-        string MotivoConsulta);
+        string? PacienteNombre,
+        string? MotivoConsulta);
 }
