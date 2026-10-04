@@ -38,6 +38,12 @@ public class StaffConfiguration : IEntityTypeConfiguration<Staff>
         
         builder.Property(x => x.IsActive)
             .HasColumnName("activo");
+        
+        // fk
+        builder.HasOne<User>()
+            .WithOne()
+            .HasForeignKey<Staff>(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
     
 }

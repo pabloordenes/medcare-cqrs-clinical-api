@@ -25,5 +25,11 @@ public class WaitingListConfiguration : IEntityTypeConfiguration<WaitingList>
 
         builder.Property(x => x.ClinicalContext).HasColumnName("contexto_clinico")
             .HasColumnType("jsonb");
+        
+        // fk
+        builder.HasOne<Patient>()
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

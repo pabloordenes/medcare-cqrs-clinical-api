@@ -46,5 +46,16 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         
         builder.Property(x => x.ActualAttendance)
             .HasColumnName("asistio");
+        
+        // fk
+        builder.HasOne<ScheduleBlock>()
+            .WithMany()
+            .HasForeignKey(x => x.ScheduleBlockId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Patient>()
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

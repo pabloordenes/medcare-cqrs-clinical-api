@@ -24,5 +24,16 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.Property(x => x.Content).HasColumnName("contenido");
         
         builder.Property(x => x.Status).HasColumnName("estado");
+        
+        // fk
+        builder.HasOne<Appointment>()
+            .WithMany()
+            .HasForeignKey(x => x.AppointmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Patient>()
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

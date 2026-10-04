@@ -25,5 +25,16 @@ public class ScheduleBlockConfiguration : IEntityTypeConfiguration<ScheduleBlock
         
         builder.Property(x => x.EndTime)
             .HasColumnName("fecha_fin");
+        
+        // fk
+        builder.HasOne<Staff>()
+            .WithMany()
+            .HasForeignKey(x => x.DoctorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Box>()
+            .WithMany()
+            .HasForeignKey(x => x.BoxId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

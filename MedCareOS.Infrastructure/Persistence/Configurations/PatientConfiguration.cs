@@ -44,6 +44,11 @@ public class PatientConfiguration : IEntityTypeConfiguration<Patient>
         builder.Property(x => x.Neighbourhood)
             .HasColumnName("barrio");
         
+        // fk
+        builder.HasOne<User>()
+            .WithOne()
+            .HasForeignKey<Patient>(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
         
     }
 }
