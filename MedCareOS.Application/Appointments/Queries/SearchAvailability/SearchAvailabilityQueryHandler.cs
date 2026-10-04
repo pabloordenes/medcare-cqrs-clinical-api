@@ -3,10 +3,6 @@ using MedCareOS.Domain.Enums;
 using MedCareOS.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Reflection.Metadata;
-using System.Text;
 
 namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
 {
@@ -21,12 +17,14 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
 
         public async Task<List<AgendaBloqueDto>> Handle(SearchAvailabilityQuery request, CancellationToken cancellationToken)
         {
+            var desdeUtc = DateTime.SpecifyKind(request.Desde.Date, DateTimeKind.Utc);
+            var hastaFinDelDiaUtc = DateTime.SpecifyKind(request.Hasta.Date.AddDays(1), DateTimeKind.Utc);
             var availableScheduleBlocks = await (
 
                 from block in _dbContext.ScheduleBlocks
-
-                where block.StartTime >= request.Desde
-                    && block.EndTime.Date <= request.Hasta.Date
+                 
+                where block.StartTime.Date >= desdeUtc
+                    && block.EndTime.Date <= hastaFinDelDiaUtc
 
                 join staff in _dbContext.Staffs on block.DoctorId equals staff.Id
                 where staff.Specialty == request.Especialidad

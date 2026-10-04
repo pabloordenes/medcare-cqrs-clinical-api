@@ -19,11 +19,14 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
 
         public async Task<List<AgendaBloqueDto>> Handle(GetDailyAgendaQuery request, CancellationToken cancellationToken)
         {
+            var inicioDiaUtc = DateTime.SpecifyKind(request.Fecha.Date, DateTimeKind.Utc);
+            var finDiaUtc = inicioDiaUtc.AddDays(1);
             var agenda = await (
                 from block in _dbContext.ScheduleBlocks
 
                 where block.DoctorId == request.MedicoId
-                    && block.StartTime.Date == request.Fecha.Date
+                    && block.StartTime >= inicioDiaUtc
+                    && block.EndTime < finDiaUtc
 
                 join app in _dbContext.Appointments on block.Id equals app.ScheduleBlockId into appGroup
 
