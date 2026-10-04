@@ -21,7 +21,7 @@ namespace MedCareOS.Api.Controllers
         {
             var agenda = new GetDailyAgendaQuery(medicoId, fecha);
 
-            var resultado = await _sender.Send(agenda);
+            var resultado = await _sender.Send(agenda, cancellationToken);
 
             return Ok(resultado);
         }
@@ -31,7 +31,7 @@ namespace MedCareOS.Api.Controllers
         {
             var search = new SearchAvailabilityQuery(especialidad, desde, hasta);
 
-            var resultado = await _sender.Send(search);
+            var resultado = await _sender.Send(search, cancellationToken);
 
             return Ok(resultado);
         }
