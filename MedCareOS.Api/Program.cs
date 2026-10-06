@@ -92,6 +92,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.MapControllers();
+
 // IMPORTANTE: El orden de estos middlewares es crítico
 app.UseAuthentication();
 app.UseAuthorization();
