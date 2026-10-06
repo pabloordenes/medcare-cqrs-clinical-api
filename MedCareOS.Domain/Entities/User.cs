@@ -11,11 +11,12 @@ public class User
     
     private User() {} // ef
 
-    public static User Create(string email, UserRole role)
+    public static User Create(Guid id, string email, UserRole role)
     {
         return new User
         {
-            Id =  Guid.NewGuid(), Email = email, Role =  role, CreatedAt =  DateTimeOffset.UtcNow
+            Id =  id, // enviamos uuid desde auth.user
+            Email = email, Role =  role, CreatedAt =  DateTimeOffset.UtcNow
         };
     }
 }   
