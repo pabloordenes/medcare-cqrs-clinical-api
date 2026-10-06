@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using MassTransit;
 using MedCareOS.Domain.Repositories;
 using MedCareOS.Infrastructure.Persistence.Repositories;
@@ -68,7 +69,15 @@ builder.Services.AddDbContext<MedCareOS.Infrastructure.Persistence.ApplicationDb
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IStaffRepository, StaffRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {   
+        // deserializamos string a Enum
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 // ═════════════════════════════════════════════════════════════════
 // PIPELINE HTTP
 // ═════════════════════════════════════════════════════════════════
