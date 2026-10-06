@@ -15,4 +15,8 @@
 	  <ProjectReference Include="..\MedCareOS.Infrastructure\MedCareOS.Infrastructure.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Appointments\Queries\GetDailyAppointments\" />
+    </ItemGroup>
+
 </Project>
