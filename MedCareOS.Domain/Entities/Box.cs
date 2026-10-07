@@ -10,11 +10,11 @@ public class Box
     
     private Box() {} // ef
 
-    public static Box Create(string name, string type, string? floor)
+    public static Box Create(string name, string type, int capacity, string? floor)
     {
         return new Box
         {
-            Id = Guid.NewGuid(), Name = name, Type = type, Capacity = 1, Floor = floor
+            Id = Guid.NewGuid(), Name = name, Type = type, Capacity = capacity, Floor = floor
         };
     }
 }
