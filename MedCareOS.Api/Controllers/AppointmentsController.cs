@@ -1,6 +1,7 @@
 ﻿using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Commands.FinishConsultation;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
+using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -48,5 +49,16 @@ public class AppointmentsController : ControllerBase
         }
         
         return NoContent();
+    }
+    
+    [Authorize]
+    [HttpGet("medico/{medicoId:guid}")]
+    public async Task<IActionResult> GetDailyAppointments([FromRoute] Guid medicoId, [FromQuery] DateTime fecha, CancellationToken cancellationToken)
+    {
+        var appointments = new GetDailyAppointmentsQuery(medicoId, fecha);
+
+        var result = await _sender.Send(appointments, cancellationToken);
+
+        return Ok(result);
     }
 }
