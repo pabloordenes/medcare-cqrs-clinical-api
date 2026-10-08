@@ -20,5 +20,9 @@ public class BoxConfiguration : IEntityTypeConfiguration<Box>
         builder.Property(x => x.Capacity).HasColumnName("capacidad");
         
         builder.Property(x => x.Floor).HasColumnName("piso");
+        
+        builder.Property(x => x.IsActive)
+            .HasColumnName("activo")
+            .HasDefaultValue(true);
     }
 }

@@ -7,6 +7,7 @@ public class Box
     public string Type { get; private set; } = string.Empty;
     public int Capacity { get; private set; }
     public string? Floor { get; private set; }
+    public bool IsActive { get; private set; } = true;
     
     private Box() {} // ef
 
@@ -16,5 +17,15 @@ public class Box
         {
             Id = Guid.NewGuid(), Name = name, Type = type, Capacity = capacity, Floor = floor
         };
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
     }
 }
