@@ -22,4 +22,14 @@ public class BoxRepository : IBoxRepository
     {
         return await _dbContext.Boxes.AnyAsync(x => x.Name == name && x.Floor == floor, cancellationToken);
     }
+    
+    public async Task<bool> ExistsByNameAndFloorExceptIdAsync(Guid boxId, string name, string floor, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Boxes.AnyAsync(x => x.Id != boxId && x.Name == name && x.Floor == floor, cancellationToken);
+    }
+    
+    public async Task<Box?> GetByIdAsync(Guid boxId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Boxes.FirstOrDefaultAsync(x => x.Id == boxId, cancellationToken);
+    }
 }
