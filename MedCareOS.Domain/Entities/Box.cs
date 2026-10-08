@@ -28,4 +28,26 @@ public class Box
     {
         IsActive = true;
     }
+
+    public void UpdateDetails(string name, string type, int capacity, string floor, bool isActive)
+    {
+        if (capacity <= 0)
+        {
+            throw new ArgumentException("La capacidad debe ser mayor que cero.", nameof(capacity));
+        }
+        
+        Name = name;
+        Type = type;
+        Capacity = capacity;
+        Floor = floor;
+
+        if (isActive)
+        {
+            Activate();
+        }
+        else
+        {
+            Deactivate();
+        }
+    }
 }
