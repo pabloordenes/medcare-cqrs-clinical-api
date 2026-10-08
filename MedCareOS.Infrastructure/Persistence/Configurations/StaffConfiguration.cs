@@ -36,9 +36,6 @@ public class StaffConfiguration : IEntityTypeConfiguration<Staff>
         builder.Property(x => x.Phone)
             .HasColumnName("telefono");
         
-        builder.Property(x => x.IsActive)
-            .HasColumnName("activo");
-        
         // fk
         builder.HasOne<User>()
             .WithOne()

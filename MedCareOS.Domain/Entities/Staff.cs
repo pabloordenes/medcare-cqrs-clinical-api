@@ -10,7 +10,6 @@ public class Staff
     public string? Specialty { get; private set; }
     public string RoleName { get; private set; } = string.Empty;
     public string? Phone { get; private set; }
-    public bool IsActive { get; private set; } = true;
     
     private Staff() {} // ef
 
@@ -20,7 +19,18 @@ public class Staff
         return new Staff
         {
             Id =  Guid.NewGuid(), UserId = userId, FirstName = firstName, LastName = lastName,
-            Rut = rut, Specialty = specialty, RoleName = roleName, Phone = phone, IsActive = true
+            Rut = rut, Specialty = specialty, RoleName = roleName, Phone = phone
         };
+    }
+
+    public void UpdateProfile(string firstName, string lastName, string rut,
+        string? phone, string? specialty, string roleName)
+    {
+        FirstName = firstName;
+        LastName = lastName;
+        Rut = rut;
+        Phone = phone;
+        Specialty = specialty;
+        RoleName = roleName;
     }
 }
