@@ -3,6 +3,7 @@ using MedCareOS.Application.Staffs.Queries.GetAllStaff;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MedCareOS.Application.Staffs.Commands.UpdateStaff;
 
 namespace MedCareOS.Api.Controllers;
 
@@ -32,5 +33,19 @@ public class StaffController : ControllerBase
         var staffs = await _sender.Send(new GetAllStaffQuery(), cancellationToken);
         return Ok(staffs);
     }
+
+    [Authorize]
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdateStaff([FromRoute] Guid id, [FromBody] UpdateStaffCommand command, CancellationToken cancellationToken)
+    {
+        if(command.StaffId != id)
+           return BadRequest("El ID de la ruta no coincide con el ID enviado en el body.");
+
+        await _sender.Send(command, cancellationToken);
+
+        return NoContent();
+    }
+
+
     
 }
