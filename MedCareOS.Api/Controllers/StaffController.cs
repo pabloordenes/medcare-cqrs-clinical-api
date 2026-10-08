@@ -1,4 +1,5 @@
 ﻿using MedCareOS.Application.Staffs.Commands.CreateStaff;
+using MedCareOS.Application.Staffs.Queries.GetAllStaff;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +23,14 @@ public class StaffController : ControllerBase
     {
         var staffId = await _sender.Send(command, cancellationToken);
         return StatusCode(StatusCodes.Status201Created, new { id = staffId });
+    }
+
+    [Authorize]
+    [HttpGet]
+    public async Task<IActionResult> GetAllStaff(CancellationToken cancellationToken)
+    {
+        var staffs = await _sender.Send(new GetAllStaffQuery(), cancellationToken);
+        return Ok(staffs);
     }
     
 }
