@@ -46,7 +46,7 @@ public class CreateStaffCommandHandler : IRequestHandler<CreateStaffCommand, Gui
                 request.Role
             );
             
-            _userRepository.AddUser(newUser);
+            _userRepository.Add(newUser);
         }
 
         var newStaff = Staff.Create(
@@ -59,7 +59,7 @@ public class CreateStaffCommandHandler : IRequestHandler<CreateStaffCommand, Gui
             request.Phone
         );
         
-        _staffRepository.AddStaff(newStaff);
+        _staffRepository.Add(newStaff);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         

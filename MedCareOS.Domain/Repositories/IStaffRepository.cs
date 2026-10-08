@@ -5,7 +5,7 @@ namespace MedCareOS.Domain.Repositories;
 public interface IStaffRepository
 {
     Task<Staff?> FindByRutAsync(string staffRut, CancellationToken cancellationToken = default);
-    void AddStaff(Staff staff);
+    void Add(Staff staff);
     Task<Staff?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Staff?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }

@@ -18,7 +18,7 @@ public class StaffRepository : IStaffRepository
         return await _dbContext.Staffs.FirstOrDefaultAsync(x => x.Rut == staffRut, cancellationToken);
     }
 
-    public void AddStaff(Staff staff)
+    public void Add(Staff staff)
     {
         _dbContext.Staffs.Add(staff);
     }
