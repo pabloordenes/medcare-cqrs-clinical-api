@@ -21,6 +21,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.Role)
             .HasColumnName("rol")
             .HasConversion<string>();
+        
+        builder.Property(x => x.IsActive)
+            .HasColumnName("activo")
+            .HasDefaultValue(true);
 
     }
 }

@@ -8,6 +8,7 @@ public class User
     public string Email { get; private set; } = string.Empty;
     public UserRole Role { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
+    public bool IsActive { get; private set; } = true;
     
     private User() {} // ef
 
@@ -18,5 +19,15 @@ public class User
             Id =  id, // enviamos uuid desde auth.user
             Email = email, Role =  role, CreatedAt =  DateTimeOffset.UtcNow
         };
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
     }
 }   
