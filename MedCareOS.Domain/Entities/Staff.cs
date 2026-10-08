@@ -3,7 +3,7 @@
 public class Staff
 {
     public Guid Id { get; private set; }
-    public Guid? UserId { get; private set; }
+    public Guid UserId { get; private set; }
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } =  string.Empty;
     public string Rut { get; private set; } = string.Empty;
@@ -13,7 +13,7 @@ public class Staff
     
     private Staff() {} // ef
 
-    public static Staff Create(Guid? userId, string firstName, string lastName, string rut, 
+    public static Staff Create(Guid userId, string firstName, string lastName, string rut, 
         string? specialty, string roleName, string? phone)
     {
         return new Staff

@@ -15,7 +15,8 @@ public class StaffConfiguration : IEntityTypeConfiguration<Staff>
             .HasColumnName("id");
         
         builder.Property(x => x.UserId)
-            .HasColumnName("usuario_id");
+            .HasColumnName("usuario_id")
+            .IsRequired();
 
         builder.Property(x => x.FirstName)
             .HasColumnName("nombre");
@@ -40,6 +41,7 @@ public class StaffConfiguration : IEntityTypeConfiguration<Staff>
         builder.HasOne<User>()
             .WithOne()
             .HasForeignKey<Staff>(x => x.UserId)
+            .IsRequired()
             .OnDelete(DeleteBehavior.Restrict);
     }
     
