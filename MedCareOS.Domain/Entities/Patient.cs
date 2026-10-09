@@ -7,7 +7,7 @@ public class Patient
     public string Rut { get; private set; } = string.Empty;
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
-    public DateTime DateOfBirth { get; private set; }
+    public DateOnly DateOfBirth { get; private set; }
     public string Gender { get; private set; } = string.Empty;
     public string? Address { get; private set; }
     public string? Neighbourhood { get; private set; }
@@ -18,7 +18,7 @@ public class Patient
     private Patient() { } // ef core
 
     private Patient(Guid id, Guid userId, string rut, 
-        string firstName, string lastName, DateTime dateOfBirth,
+        string firstName, string lastName, DateOnly dateOfBirth,
         string gender, string? address, string? neighbourhood, string phone, 
         string? email)
     {
@@ -37,7 +37,7 @@ public class Patient
     }
     
     public static Patient Create(Guid userId, string rut, string firstName, 
-        string lastName, DateTime dateOfBirth, string gender, string phone, string? email = null,
+        string lastName, DateOnly dateOfBirth, string gender, string phone, string? email = null,
         string? address = null, string? neighbourhood = null)
     {
         if (userId == Guid.Empty)
@@ -65,6 +65,7 @@ public class Patient
             address,
             neighbourhood,
             phone,
-            email);
+            email
+            );
     }
 }

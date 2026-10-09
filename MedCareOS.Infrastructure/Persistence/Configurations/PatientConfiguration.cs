@@ -25,10 +25,12 @@ public class PatientConfiguration : IEntityTypeConfiguration<Patient>
         builder.Property(x => x.Rut)
             .HasColumnName("rut");
         builder.HasIndex(x => x.Rut).IsUnique(); // rut unico
-        
+
         builder.Property(x => x.DateOfBirth)
-            .HasColumnName("fecha_nacimiento");
-        
+            .HasColumnName("fecha_nacimiento")
+            .HasColumnType("date");
+
+
         builder.Property(x => x.Gender)
             .HasColumnName("genero");
         
