@@ -17,4 +17,19 @@ public class PatientRepository : IPatientRepository
     {
         return await _dbContext.Patients.FirstOrDefaultAsync(x => x.Id == patientId, cancellationToken);
     }
+    
+    public async Task<bool> ExistsByRutAsync(string rut, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Patients.AnyAsync(x => x.Rut == rut, cancellationToken);
+    }
+    
+    public void Add(Patient patient)
+    {
+        _dbContext.Patients.Add(patient);
+    }
+    
+    public async Task<Patient?> GetByUserId(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Patients.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+    }
 }
