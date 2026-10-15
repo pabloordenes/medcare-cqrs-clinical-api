@@ -8,32 +8,29 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ═════════════════════════════════════════════════════════════════
-// 1. CQRS (MediatR)
-// ═════════════════════════════════════════════════════════════════
+// mediatr
 builder.Services.AddMediatR(cfg => 
     cfg.RegisterServicesFromAssembly(typeof(MedCareOS.Application.AssemblyReference).Assembly));
 
-// ═════════════════════════════════════════════════════════════════
-// 2. TICKET B0-1: MassTransit + RabbitMQ
-// ═════════════════════════════════════════════════════════════════
+// configuracion de MassTransit con RabbitMQ
 builder.Services.AddMassTransit(x =>
 {
-    // Cambiamos In-Memory por RabbitMQ apuntando al Docker local
+    // cloud amqp: masstransit 
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host("localhost", "/", h => {
-            h.Username("guest");
-            h.Password("guest");
+        var rmqHost = builder.Configuration["RabbitMq:Host"];
+        var rmqUser = builder.Configuration["RabbitMq:Username"];
+        var rmqPass = builder.Configuration["RabbitMq:Password"];
+
+        cfg.Host(rmqHost, "/", h => {
+            h.Username(rmqUser);
+            h.Password(rmqPass);
         });
         cfg.ConfigureEndpoints(context);
     });
 });
 
-// ═════════════════════════════════════════════════════════════════
-// 3. TICKET B0-3: Autenticación con Supabase (JWT)
-// ═════════════════════════════════════════════════════════════════
-// Lee el secreto que guardamos en tu terminal con 'dotnet user-secrets'
+// configuracion de JWT
 var supabaseProjectId = builder.Configuration["Supabase:ProjectId"] 
     ?? throw new ArgumentNullException("Supabase ProjectId is missing in User Secrets");
 
@@ -79,9 +76,8 @@ builder.Services.AddControllers()
         // deserializamos string a Enum
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
-// ═════════════════════════════════════════════════════════════════
-// PIPELINE HTTP
-// ═════════════════════════════════════════════════════════════════
+
+// pipeline http
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
