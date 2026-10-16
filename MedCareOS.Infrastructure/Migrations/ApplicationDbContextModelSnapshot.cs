@@ -246,13 +246,38 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("box_id");
 
-                    b.Property<Guid>("DoctorId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("medico_id");
-
                     b.Property<DateTime>("EndTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_fin");
+
+                    b.PrimitiveCollection<int[]>("RuleDaysOfWeek")
+                        .IsRequired()
+                        .HasColumnType("integer[]")
+                        .HasColumnName("rule_days_of_week");
+
+                    b.Property<DateOnly>("RuleEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("rule_end_date");
+
+                    b.Property<TimeOnly>("RuleEndTime")
+                        .HasColumnType("time")
+                        .HasColumnName("rule_end_time");
+
+                    b.Property<Guid>("RuleGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rule_group_id");
+
+                    b.Property<DateOnly>("RuleStartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("rule_start_date");
+
+                    b.Property<TimeOnly>("RuleStartTime")
+                        .HasColumnType("time")
+                        .HasColumnName("rule_start_time");
+
+                    b.Property<Guid>("StaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("medico_id");
 
                     b.Property<DateTime>("StartTime")
                         .HasColumnType("timestamp with time zone")
@@ -262,7 +287,7 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.HasIndex("BoxId");
 
-                    b.HasIndex("DoctorId");
+                    b.HasIndex("StaffId");
 
                     b.ToTable("schedule_blocks", (string)null);
                 });
@@ -440,7 +465,7 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.HasOne("MedCareOS.Domain.Entities.Staff", null)
                         .WithMany()
-                        .HasForeignKey("DoctorId")
+                        .HasForeignKey("StaffId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
