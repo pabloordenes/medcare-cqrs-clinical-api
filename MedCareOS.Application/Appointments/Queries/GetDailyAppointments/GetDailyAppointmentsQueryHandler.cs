@@ -28,7 +28,7 @@ public class GetDailyAppointmentsQueryHandler : IRequestHandler<GetDailyAppointm
 
             join box in _dbContext.Boxes on block.BoxId equals box.Id
 
-            where block.DoctorId == request.DoctorId
+            where block.StaffId == request.DoctorId
                   && block.StartTime >= startDayUtc && block.StartTime < endDayUtc
                   && app.Status != AppointmentStatus.Cancelled
 
