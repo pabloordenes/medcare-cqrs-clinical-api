@@ -24,7 +24,7 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
                 from block in _dbContext.ScheduleBlocks
                  
                 where block.StartTime.Date >= desdeUtc
-                    && block.EndTime.Date <= hastaFinDelDiaUtc
+                    && block.EndTime.Date < hastaFinDelDiaUtc
 
                 join staff in _dbContext.Staffs on block.StaffId equals staff.Id
                 where staff.Specialty == request.Especialidad
