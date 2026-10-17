@@ -14,22 +14,56 @@ public class ScheduleBlockConfiguration : IEntityTypeConfiguration<ScheduleBlock
         builder.Property(x => x.Id)
             .HasColumnName("id");
         
-        builder.Property(x => x.DoctorId)
-            .HasColumnName("medico_id");
-        
+        builder.Property(x => x.StaffId)
+            .HasColumnName("medico_id")
+            .IsRequired();
+
         builder.Property(x => x.BoxId)
-            .HasColumnName("box_id");
+            .HasColumnName("box_id")
+            .IsRequired();
         
         builder.Property(x => x.StartTime)
-            .HasColumnName("fecha_inicio");
+            .HasColumnName("fecha_inicio")
+            .IsRequired();
         
         builder.Property(x => x.EndTime)
-            .HasColumnName("fecha_fin");
+            .HasColumnName("fecha_fin")
+            .IsRequired();
         
+        // propiedades de regla
+        
+        builder.Property(x => x.RuleGroupId)
+            .HasColumnName("rule_group_id")
+            .IsRequired();
+        
+        builder.Property(x => x.RuleStartDate)
+            .HasColumnName("rule_start_date")
+            .HasColumnType("date")
+            .IsRequired();
+
+        builder.Property(x => x.RuleEndDate)
+            .HasColumnName("rule_end_date")
+            .HasColumnType("date")
+            .IsRequired();
+
+        builder.Property(x => x.RuleStartTime)
+            .HasColumnName("rule_start_time")
+            .HasColumnType("time")
+            .IsRequired();
+
+        builder.Property(x => x.RuleEndTime)
+            .HasColumnName("rule_end_time")
+            .HasColumnType("time")
+            .IsRequired();
+
+        builder.Property(x => x.RuleDaysOfWeek)
+            .HasColumnName("rule_days_of_week")
+            .IsRequired();
+
         // fk
         builder.HasOne<Staff>()
             .WithMany()
-            .HasForeignKey(x => x.DoctorId)
+            .HasForeignKey(x => x.StaffId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<Box>()

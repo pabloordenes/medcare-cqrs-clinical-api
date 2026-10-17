@@ -69,6 +69,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
+builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

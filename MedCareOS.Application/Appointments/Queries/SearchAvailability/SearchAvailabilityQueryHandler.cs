@@ -24,9 +24,9 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
                 from block in _dbContext.ScheduleBlocks
                  
                 where block.StartTime.Date >= desdeUtc
-                    && block.EndTime.Date <= hastaFinDelDiaUtc
+                    && block.EndTime.Date < hastaFinDelDiaUtc
 
-                join staff in _dbContext.Staffs on block.DoctorId equals staff.Id
+                join staff in _dbContext.Staffs on block.StaffId equals staff.Id
                 where staff.Specialty == request.Especialidad
 
                 join appBlock in _dbContext.Appointments on block.Id equals appBlock.ScheduleBlockId into appBlockGroup
@@ -34,7 +34,7 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
                 where activeApp == null
 
                 select new AgendaBloqueDto(
-                    block.Id, block.DoctorId, block.BoxId, block.StartTime, block.EndTime, "libre", null, null, null
+                    block.Id, block.StaffId, block.BoxId, block.StartTime, block.EndTime, "libre", null, null, null
                     )
                 ).AsNoTracking().ToListAsync(cancellationToken);
 

@@ -24,7 +24,7 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
             var agenda = await (
                 from block in _dbContext.ScheduleBlocks
 
-                where block.DoctorId == request.MedicoId
+                where block.StaffId == request.MedicoId
                     && block.StartTime >= inicioDiaUtc
                     && block.EndTime < finDiaUtc
 
@@ -38,7 +38,7 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
 
                 select new AgendaBloqueDto(
                     block.Id,
-                    block.DoctorId,
+                    block.StaffId,
                     block.BoxId,
                     block.StartTime,
                     block.EndTime,
