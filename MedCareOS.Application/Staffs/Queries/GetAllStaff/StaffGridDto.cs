@@ -8,4 +8,9 @@ public record StaffGridDto(
     string FirstName,
     string LastName,
     string Email,
-    UserRole Role);
+    string Phone,
+    string Specialty,
+    string RoleName,
+    bool IsActive,
+    UserRole Role
+    );

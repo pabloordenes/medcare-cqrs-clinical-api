@@ -26,6 +26,10 @@ public class GetAllStaffQueryHandler : IRequestHandler<GetAllStaffQuery, List<St
                     staff.FirstName,
                     staff.LastName,
                     user.Email,
+                    staff.Phone ?? "",
+                    staff.Specialty ?? "",
+                    staff.RoleName,
+                    user.IsActive,
                     user.Role
                 )
             ).AsNoTracking()
