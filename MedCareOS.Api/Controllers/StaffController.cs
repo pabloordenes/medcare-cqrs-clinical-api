@@ -4,6 +4,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MedCareOS.Application.Staffs.Commands.UpdateStaff;
+using MedCareOS.Domain.Enums;
 
 namespace MedCareOS.Api.Controllers;
 
@@ -28,9 +29,9 @@ public class StaffController : ControllerBase
 
     [Authorize]
     [HttpGet]
-    public async Task<IActionResult> GetAllStaff(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetAllStaff([FromQuery] UserRole? role, CancellationToken cancellationToken)
     {
-        var staffs = await _sender.Send(new GetAllStaffQuery(), cancellationToken);
+        var staffs = await _sender.Send(new GetAllStaffQuery(role), cancellationToken);
         return Ok(staffs);
     }
 

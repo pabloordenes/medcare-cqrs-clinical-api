@@ -15,25 +15,29 @@ public class GetAllStaffQueryHandler : IRequestHandler<GetAllStaffQuery, List<St
 
     public async Task<List<StaffGridDto>> Handle(GetAllStaffQuery request, CancellationToken cancellationToken)
     {
-        var staffs = await (
-                from staff in _dbContext.Staffs
+        var query = from staff in _dbContext.Staffs
+            join user in _dbContext.Users on staff.UserId equals user.Id
+            select new { staff, user };
 
-                join user in _dbContext.Users on staff.UserId equals user.Id
-
-                select new StaffGridDto(
-                    staff.Id,
-                    staff.Rut,
-                    staff.FirstName,
-                    staff.LastName,
-                    user.Email,
-                    staff.Phone ?? "",
-                    staff.Specialty ?? "",
-                    staff.RoleName,
-                    user.IsActive,
-                    user.Role
-                )
-            ).AsNoTracking()
-            .ToListAsync(cancellationToken);
+        if (request.Role.HasValue)
+        {
+            query = query.Where(x => x.user.Role == request.Role.Value);
+        }
+        
+        var staffs = await query
+            .AsNoTracking()
+            .Select(x => new StaffGridDto(
+                    x.staff.Id,
+                    x.staff.Rut,
+                    x.staff.FirstName,
+                    x.staff.LastName,
+                    x.user.Email,
+                    x.staff.Phone ?? "",
+                    x.staff.Specialty ?? "",
+                    x.staff.RoleName,
+                    x.user.IsActive,
+                    x.user.Role
+                    )).ToListAsync(cancellationToken);
         
         return staffs;
     }
