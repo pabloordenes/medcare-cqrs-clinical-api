@@ -1,4 +1,4 @@
-﻿using MedCareOS.Infrastructure.Persistence;
+﻿using MedCareOS.Application.Interfaces;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -6,9 +6,9 @@ namespace MedCareOS.Application.Boxes.Queries.GetAllBoxes;
 
 public class GetAllBoxesQueryHandler : IRequestHandler<GetAllBoxesQuery, List<BoxDto>>
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IApplicationDbContext _dbContext;
     
-    public GetAllBoxesQueryHandler(ApplicationDbContext dbContext)
+    public GetAllBoxesQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
     }

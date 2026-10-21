@@ -1,4 +1,4 @@
-﻿using MedCareOS.Infrastructure.Persistence;
+﻿using MedCareOS.Application.Interfaces;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -6,9 +6,9 @@ namespace MedCareOS.Application.ScheduleBlocks.Queries.GetAllScheduleBlocks;
 
 public class GetAllScheduleBlocksQueryHandler : IRequest<List<ScheduleBlockDto>>
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IApplicationDbContext _dbContext;
     
-    public GetAllScheduleBlocksQueryHandler(ApplicationDbContext dbContext)
+    public GetAllScheduleBlocksQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
     }

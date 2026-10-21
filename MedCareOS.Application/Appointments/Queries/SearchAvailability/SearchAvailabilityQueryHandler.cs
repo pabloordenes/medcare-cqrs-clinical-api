@@ -1,6 +1,6 @@
 ﻿using MedCareOS.Application.Appointments.Queries.GetDailyAgenda;
+using MedCareOS.Application.Interfaces;
 using MedCareOS.Domain.Enums;
-using MedCareOS.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +8,9 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
 {
     public class SearchAvailabilityQueryHandler : IRequestHandler<SearchAvailabilityQuery, List<AgendaBloqueDto>>
     {
-        private readonly ApplicationDbContext _dbContext;
+        private readonly IApplicationDbContext _dbContext;
 
-        public SearchAvailabilityQueryHandler(ApplicationDbContext applicationDbContext)
+        public SearchAvailabilityQueryHandler(IApplicationDbContext applicationDbContext)
         {
             _dbContext = applicationDbContext;
         }

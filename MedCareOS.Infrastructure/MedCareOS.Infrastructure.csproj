@@ -9,9 +9,11 @@
     <ItemGroup>
       <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
       <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+      <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\MedCareOS.Application\MedCareOS.Application.csproj" />
       <ProjectReference Include="..\MedCareOS.Domain\MedCareOS.Domain.csproj" />
     </ItemGroup>
 

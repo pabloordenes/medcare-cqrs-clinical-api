@@ -1,4 +1,4 @@
-﻿using MedCareOS.Infrastructure.Persistence;
+﻿using MedCareOS.Application.Interfaces;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -6,9 +6,9 @@ namespace MedCareOS.Application.Staffs.Queries.GetAllStaff;
 
 public class GetAllStaffQueryHandler : IRequestHandler<GetAllStaffQuery, List<StaffGridDto>>
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IApplicationDbContext _dbContext;
 
-    public GetAllStaffQueryHandler(ApplicationDbContext dbContext)
+    public GetAllStaffQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
     }
