@@ -92,4 +92,14 @@ public class Appointment
         Status = AppointmentStatus.Finished;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
+
+    public void ApplyNlpAnalysis(string summary, string? processedSymptoms)
+    {
+        if (Status is AppointmentStatus.Cancelled)
+            throw new InvalidOperationException("No puedes iniciar una cita cancelada.");
+        
+        NlpSummary = summary;
+        ProcessedSymptoms = processedSymptoms;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }
