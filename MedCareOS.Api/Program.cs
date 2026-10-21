@@ -1,9 +1,15 @@
 using System.Text.Json.Serialization;
 using MassTransit;
+using MedCareOS.Application.Common.Interfaces;
+using MedCareOS.Application.Interfaces;
 using MedCareOS.Domain.Repositories;
+using MedCareOS.Infrastructure.Configuration;
+using MedCareOS.Infrastructure.Persistence;
 using MedCareOS.Infrastructure.Persistence.Repositories;
+using MedCareOS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,6 +76,19 @@ builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+builder.Services.AddScoped<IApplicationDbContext>(sp => 
+    sp.GetRequiredService<ApplicationDbContext>());
+
+builder.Services.Configure<AiServiceOptions>(
+    builder.Configuration.GetSection(AiServiceOptions.SectionName));
+
+builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
+
+builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<AiServiceOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
