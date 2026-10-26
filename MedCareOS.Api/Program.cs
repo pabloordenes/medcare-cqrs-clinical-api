@@ -28,7 +28,7 @@ builder.Services.AddMassTransit(x =>
         var rmqUser = builder.Configuration["RabbitMq:Username"];
         var rmqPass = builder.Configuration["RabbitMq:Password"];
 
-        cfg.Host(rmqHost, "/", h => {
+        cfg.Host(rmqHost, rmqUser, h => {
             h.Username(rmqUser);
             h.Password(rmqPass);
         });
@@ -109,10 +109,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapControllers();
+
 
 // IMPORTANTE: El orden de estos middlewares es crítico
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapControllers();
 
 app.Run();
