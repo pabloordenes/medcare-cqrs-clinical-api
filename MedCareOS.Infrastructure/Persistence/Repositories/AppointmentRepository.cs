@@ -1,4 +1,5 @@
 ﻿using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,5 +23,10 @@ public class AppointmentRepository : IAppointmentRepository
     public async Task<Appointment?> GetAppointmentByIdAsync(Guid appointmentId, CancellationToken cancellationToken)
     {
         return await _dbContext.Appointments.FirstOrDefaultAsync(x => x.Id == appointmentId, cancellationToken);
+    }
+
+    public async Task<int> GetNoShowCountByPatientId(Guid patientId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);
     }
 }

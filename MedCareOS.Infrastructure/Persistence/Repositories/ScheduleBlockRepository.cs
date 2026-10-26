@@ -26,4 +26,9 @@ public class ScheduleBlockRepository : IScheduleBlockRepository
     {
         _dbContext.ScheduleBlocks.AddRange(scheduleBlock);
     }
+
+    public async Task<ScheduleBlock?> GetByIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.ScheduleBlocks.FirstOrDefaultAsync(sb => sb.Id == scheduleBlockId, cancellationToken);
+    }
 }
