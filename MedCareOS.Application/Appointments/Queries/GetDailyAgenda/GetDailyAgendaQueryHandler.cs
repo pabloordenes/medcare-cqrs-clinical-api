@@ -1,18 +1,15 @@
 ﻿using MedCareOS.Domain.Enums;
-using MedCareOS.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using MedCareOS.Application.Interfaces;
 
 namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
 {
     public class GetDailyAgendaQueryHandler : IRequestHandler<GetDailyAgendaQuery, List<AgendaBloqueDto>>
     {
-        private readonly ApplicationDbContext _dbContext;
+        private readonly IApplicationDbContext _dbContext;
 
-        public GetDailyAgendaQueryHandler(ApplicationDbContext applicationDbContext)
+        public GetDailyAgendaQueryHandler(IApplicationDbContext applicationDbContext)
         {
             _dbContext = applicationDbContext;
         }

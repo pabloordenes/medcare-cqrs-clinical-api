@@ -1,9 +1,10 @@
-﻿using MedCareOS.Domain.Entities;
+﻿using MedCareOS.Application.Interfaces;
+using MedCareOS.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace MedCareOS.Infrastructure.Persistence;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
     

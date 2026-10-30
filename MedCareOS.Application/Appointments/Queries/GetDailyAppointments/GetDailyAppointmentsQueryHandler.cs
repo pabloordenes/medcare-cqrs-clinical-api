@@ -1,5 +1,5 @@
-﻿using MedCareOS.Domain.Enums;
-using MedCareOS.Infrastructure.Persistence;
+﻿using MedCareOS.Application.Interfaces;
+using MedCareOS.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,9 +7,9 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 
 public class GetDailyAppointmentsQueryHandler : IRequestHandler<GetDailyAppointmentsQuery, List<DailyAppointmentDto>>
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IApplicationDbContext _dbContext;
     
-    public GetDailyAppointmentsQueryHandler(ApplicationDbContext dbContext)
+    public GetDailyAppointmentsQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
     }

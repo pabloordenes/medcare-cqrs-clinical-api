@@ -480,3 +480,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Claves criptográficas y certificados privados
+*.pem
+*.key
+Certificates/
