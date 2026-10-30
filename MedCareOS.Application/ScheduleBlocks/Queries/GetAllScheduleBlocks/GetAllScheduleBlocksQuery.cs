@@ -4,4 +4,4 @@ using MediatR;
 namespace MedCareOS.Application.ScheduleBlocks.Queries.GetAllScheduleBlocks;
 
 public record GetAllScheduleBlocksQuery(
-    ) : IRequest<List<ScheduleBlock>>;
+    ) : IRequest<List<ScheduleBlockDto>>;

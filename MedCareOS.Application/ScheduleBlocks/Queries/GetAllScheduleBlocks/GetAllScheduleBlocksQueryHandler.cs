@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MedCareOS.Application.ScheduleBlocks.Queries.GetAllScheduleBlocks;
 
-public class GetAllScheduleBlocksQueryHandler : IRequest<List<ScheduleBlockDto>>
+public class GetAllScheduleBlocksQueryHandler : IRequestHandler<GetAllScheduleBlocksQuery, List<ScheduleBlockDto>>
 {
     private readonly IApplicationDbContext _dbContext;
     
@@ -13,7 +13,7 @@ public class GetAllScheduleBlocksQueryHandler : IRequest<List<ScheduleBlockDto>>
         _dbContext = dbContext;
     }
 
-    public async Task<List<ScheduleBlockDto>> Handle()
+    public async Task<List<ScheduleBlockDto>> Handle(GetAllScheduleBlocksQuery request, CancellationToken cancellationToken)
     {
         var rawBlocks = await (
             from block in _dbContext.ScheduleBlocks
@@ -41,7 +41,7 @@ public class GetAllScheduleBlocksQueryHandler : IRequest<List<ScheduleBlockDto>>
                 block.RuleDaysOfWeek
             }
         ).AsNoTracking()
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var uniqueRule = rawBlocks.DistinctBy(x => x.RuleGroupId);
             
