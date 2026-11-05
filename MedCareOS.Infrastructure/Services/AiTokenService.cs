@@ -11,22 +11,40 @@ namespace MedCareOS.Infrastructure.Services;
 public class AiTokenService : IAiTokenService
 {
     private readonly AiServiceOptions _options;
+    private readonly RSA _rsa;
     private readonly SigningCredentials _signingCredentials;
 
     public AiTokenService(IOptions<AiServiceOptions> options)
     {
         _options = options.Value;
-        
-        if (!File.Exists(_options.PrivateKeyPath))
-            throw new FileNotFoundException($"No se encontró la clave privada en {_options.PrivateKeyPath}");
-        
-        string pemText = File.ReadAllText(_options.PrivateKeyPath);
-        
-        var rsa = RSA.Create();
-        rsa.ImportFromPem(pemText);
-        
-        var securityKey = new RsaSecurityKey(rsa);
+        _rsa = RSA.Create();
+        LoadPrivateKey();
+        var securityKey = new RsaSecurityKey(_rsa);
         _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256);
+    }
+
+    private void LoadPrivateKey()
+    {
+        string privateKeyContent;
+        
+        if (!string.IsNullOrWhiteSpace(_options.PrivateKeyContent))
+        {
+            privateKeyContent = _options.PrivateKeyContent;
+        }
+        // entorno local
+        else if (!string.IsNullOrWhiteSpace(_options.PrivateKeyPath) && File.Exists(_options.PrivateKeyPath))
+        {
+            privateKeyContent = File.ReadAllText(_options.PrivateKeyPath);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "No se encontró la clave privada RSA. " +
+                "Debe proveer AIService:PrivateKeyContent o una ruta válida en AiService:PrivateKeyPath."
+            );
+        }
+        
+        _rsa.ImportFromPem(privateKeyContent.ToCharArray());
     }
 
     public string GenerateToken()
@@ -49,8 +67,6 @@ public class AiTokenService : IAiTokenService
         var tokenHandler = new JwtSecurityTokenHandler();
         var token = tokenHandler.CreateToken(tokenDescriptor);
 
-        string tokenString = tokenHandler.WriteToken(token);
-
-        return tokenString;
+        return tokenHandler.WriteToken(token);
     }
 }

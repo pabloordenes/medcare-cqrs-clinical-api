@@ -9,4 +9,5 @@ public class AiServiceOptions
     public string Audience { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string PrivateKeyPath { get; set; } = string.Empty;
+    public string PrivateKeyContent { get; set; } = string.Empty;
 }
