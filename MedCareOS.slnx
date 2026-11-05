@@ -1,6 +1,8 @@
 <Solution>
   <Project Path="MedCareOS.Api/MedCareOS.Api.csproj" />
+  <Project Path="MedCareOS.Application.UnitTests/MedCareOS.Application.UnitTests.csproj" />
   <Project Path="MedCareOS.Application/MedCareOS.Application.csproj" />
   <Project Path="MedCareOS.Domain/MedCareOS.Domain.csproj" />
+  <Project Path="MedCareOS.Infrastructure.UnitTests/MedCareOS.Infrastructure.UnitTests.csproj" />
   <Project Path="MedCareOS.Infrastructure/MedCareOS.Infrastructure.csproj" />
 </Solution>
