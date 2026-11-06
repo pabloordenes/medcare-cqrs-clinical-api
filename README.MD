@@ -1,6 +1,6 @@
 # MedCareOS CQRS API
 
-[![.NET Continuous Integration](https://github.com/pabloordenes/MedCareOS/actions/workflows/ci.yml/badge.svg)](https://github.com/pabloordenes/MedCareOS/actions)
+[![.NET Continuous Integration](https://github.com/pabloordenes/medcare-cqrs-clinical-api/actions/workflows/ci.yml/badge.svg)](https://github.com/pabloordenes/MedCareOS/actions)
 
 > Note: This repository is currently under active development.
 
