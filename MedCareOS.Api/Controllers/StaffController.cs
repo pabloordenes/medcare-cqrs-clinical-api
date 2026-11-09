@@ -4,6 +4,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MedCareOS.Application.Staffs.Commands.UpdateStaff;
+using MedCareOS.Application.Staffs.Queries.GetStaffBySpecialty;
 using MedCareOS.Domain.Enums;
 
 namespace MedCareOS.Api.Controllers;
@@ -47,6 +48,11 @@ public class StaffController : ControllerBase
         return NoContent();
     }
 
-
-    
+    [Authorize]
+    [HttpGet]
+    public async Task<IActionResult> GetStaffBySpecialty([FromQuery] string specialty, CancellationToken ctx)
+    {
+        var staffs = await _sender.Send(new GetStaffBySpecialtyQuery(specialty), ctx);
+        return Ok(staffs);
+    }
 }
