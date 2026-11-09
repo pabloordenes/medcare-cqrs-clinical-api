@@ -48,11 +48,13 @@ public class StaffController : ControllerBase
         return NoContent();
     }
 
-    [Authorize]
-    [HttpGet]
-    public async Task<IActionResult> GetStaffBySpecialty([FromQuery] string specialty, CancellationToken ctx)
+    [HttpGet("lookup")] 
+    public async Task<IActionResult> GetStaffLookup([FromQuery] string specialty, CancellationToken ctx)
     {
-        var staffs = await _sender.Send(new GetStaffBySpecialtyQuery(specialty), ctx);
-        return Ok(staffs);
+        if (string.IsNullOrWhiteSpace(specialty))
+            return BadRequest("La especialidad es requerida para el catálogo.");
+
+        var lookup = await _sender.Send(new GetStaffBySpecialtyQuery(specialty), ctx);
+        return Ok(lookup);
     }
 }
