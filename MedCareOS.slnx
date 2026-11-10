@@ -5,4 +5,5 @@
   <Project Path="MedCareOS.Domain/MedCareOS.Domain.csproj" />
   <Project Path="MedCareOS.Infrastructure.UnitTests/MedCareOS.Infrastructure.UnitTests.csproj" />
   <Project Path="MedCareOS.Infrastructure/MedCareOS.Infrastructure.csproj" />
+  <Project Path="MedCareOS.IntegrationTests/MedCareOS.IntegrationTests.csproj" />
 </Solution>
