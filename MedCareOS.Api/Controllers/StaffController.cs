@@ -48,6 +48,7 @@ public class StaffController : ControllerBase
         return NoContent();
     }
 
+    [Authorize]
     [HttpGet("lookup")] 
     public async Task<IActionResult> GetStaffLookup([FromQuery] string specialty, CancellationToken ctx)
     {
