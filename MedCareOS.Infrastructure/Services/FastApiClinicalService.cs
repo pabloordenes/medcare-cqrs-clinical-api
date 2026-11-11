@@ -28,11 +28,12 @@ public class FastApiClinicalService : IAiClinicalService
         CancellationToken cancellationToken = default)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(4));
+        cts.CancelAfter(TimeSpan.FromSeconds(90));
 
         try
         {
             var token = _tokenService.GenerateToken();
+            
             var payload = new NlpResumenApiRequest(appointmentId, symptomsRaw);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, "nlp/resumen")
@@ -75,16 +76,23 @@ public class FastApiClinicalService : IAiClinicalService
         PredictRequestDto requestDto, CancellationToken cancellationToken = default)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(4));
+        cts.CancelAfter(TimeSpan.FromSeconds(90));
 
         try
         {
             var token = _tokenService.GenerateToken();
 
+            var mappedGender = requestDto.Gender?.Trim().ToLowerInvariant() switch
+            {
+                "masculino" => "M",
+                "femenino" => "F",
+                _ => "Otro"
+            };
+
             var payload = new PredictApiRequest(
                 CitaId: requestDto.AppointmentId,
                 Edad: requestDto.Age,
-                Genero: requestDto.Gender,
+                Genero: mappedGender,
                 DiasEspera: requestDto.DaysOfWaiting,
                 Especialidad: requestDto.Specialty,
                 AusenciasPrevias: requestDto.PreviousAbsences,

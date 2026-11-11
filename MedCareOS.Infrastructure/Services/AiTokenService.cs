@@ -51,8 +51,6 @@ public class AiTokenService : IAiTokenService
     {
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Iss, _options.Issuer),
-            new Claim(JwtRegisteredClaimNames.Aud, _options.Audience),
             new Claim("role", _options.Role),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
@@ -60,11 +58,16 @@ public class AiTokenService : IAiTokenService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
+            Issuer = _options.Issuer,     
+            Audience = _options.Audience,
             Expires = DateTime.UtcNow.AddMinutes(5),
             SigningCredentials = _signingCredentials
         };
 
         var tokenHandler = new JwtSecurityTokenHandler();
+        
+        tokenHandler.OutboundClaimTypeMap.Clear();
+        
         var token = tokenHandler.CreateToken(tokenDescriptor);
 
         return tokenHandler.WriteToken(token);
