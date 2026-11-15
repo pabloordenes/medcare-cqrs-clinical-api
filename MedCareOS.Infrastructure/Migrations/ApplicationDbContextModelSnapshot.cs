@@ -22,6 +22,40 @@ namespace MedCareOS.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.AiResolutionTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AiPlanJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("ai_plan_json");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resource_id");
+
+                    b.Property<decimal>("RiskProbability")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("risk_probability");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ai_resolution_tasks", (string)null);
+                });
+
             modelBuilder.Entity("MedCareOS.Domain.Entities.Appointment", b =>
                 {
                     b.Property<Guid>("Id")

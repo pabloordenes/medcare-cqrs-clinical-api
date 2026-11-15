@@ -11,6 +11,7 @@ public interface IApplicationDbContext
     DbSet<Staff> Staffs { get; }
     DbSet<Box> Boxes { get; }
     DbSet<User> Users { get; }
+    DbSet<AiResolutionTask> AiResolutionTasks { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

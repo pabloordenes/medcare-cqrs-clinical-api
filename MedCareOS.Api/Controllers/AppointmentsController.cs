@@ -1,5 +1,6 @@
 ﻿using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Commands.FinishConsultation;
+using MedCareOS.Application.Appointments.Commands.GenerateOverbook;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
 using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 using MediatR;
@@ -19,7 +20,6 @@ public class AppointmentsController : ControllerBase
         _sender = sender;
     }
     
-    [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentCommand command,
         CancellationToken cancellationToken)
@@ -60,5 +60,20 @@ public class AppointmentsController : ControllerBase
         var result = await _sender.Send(appointments, cancellationToken);
 
         return Ok(result);
+    }
+    
+    public record OverbookPayloadDto(Guid ResourceId, decimal TargetRisk, bool AutoApprove);
+
+    [HttpPost("overbook")]
+    public async Task<IActionResult> GenerateOverbookWebhook([FromBody] OverbookPayloadDto payload, CancellationToken cancellationToken)
+    {
+        var command = new GenerateOverbookCommand(payload.ResourceId, payload.TargetRisk, payload.AutoApprove);
+    
+        var result = await _sender.Send(command, cancellationToken);
+
+        if (result)
+            return Ok(new { message = "Sobrecupo generado exitosamente en MedCareOS." });
+
+        return BadRequest("No se pudo generar el sobrecupo debido a datos inválidos o faltantes.");
     }
 }

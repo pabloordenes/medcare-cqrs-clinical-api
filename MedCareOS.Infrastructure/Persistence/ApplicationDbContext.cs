@@ -16,6 +16,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Staff> Staffs { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<WaitingList> WaitingLists { get; set; }
+    public DbSet<AiResolutionTask> AiResolutionTasks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
