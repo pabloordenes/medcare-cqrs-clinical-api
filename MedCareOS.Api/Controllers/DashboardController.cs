@@ -16,6 +16,7 @@ public class DashboardController : ControllerBase
         _sender = sender;
     }
     
+    [Authorize]
     [HttpGet("metrics")]
     public async Task<IActionResult> GetMetrics(CancellationToken cancellationToken)
     {
