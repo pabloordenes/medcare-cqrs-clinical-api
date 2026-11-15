@@ -1,6 +1,7 @@
 ﻿using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Commands.FinishConsultation;
 using MedCareOS.Application.Appointments.Commands.GenerateOverbook;
+using MedCareOS.Application.Appointments.Commands.MonitorAppointment;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
 using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 using MediatR;
@@ -75,5 +76,19 @@ public class AppointmentsController : ControllerBase
             return Ok(new { message = "Sobrecupo generado exitosamente en MedCareOS." });
 
         return BadRequest("No se pudo generar el sobrecupo debido a datos inválidos o faltantes.");
+    }
+    
+    public record MonitorPayloadDto(Guid ResourceId, bool RequiresAction);
+    
+    [HttpPost("monitor")]
+    public async Task<IActionResult> MonitorAppointmentWebhook([FromBody] MonitorPayloadDto payload, CancellationToken cancellationToken)
+    {
+        var command = new MonitorAppointmentCommand(
+            payload.ResourceId, 
+            payload.RequiresAction);
+    
+        await _sender.Send(command, cancellationToken);
+
+        return Ok(new { message = "Cita puesta bajo monitoreo manual exitosamente. Notificación generada." });
     }
 }

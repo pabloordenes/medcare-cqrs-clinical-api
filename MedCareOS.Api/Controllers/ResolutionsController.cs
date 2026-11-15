@@ -1,4 +1,6 @@
-﻿using MedCareOS.Application.Resolutions.Commands.ReceiveAiProposal;
+﻿using MedCareOS.Application.Resolutions.Commands.ApproveResolution;
+using MedCareOS.Application.Resolutions.Commands.ReceiveAiProposal;
+using MedCareOS.Application.Resolutions.Commands.RejectResolution;
 using MedCareOS.Application.Resolutions.Queries.GetPendingResolutions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -38,6 +40,25 @@ public class ResolutionsController : ControllerBase
         var pendingTasks = await _sender.Send(new GetPendingResolutionsQuery(), cancellationToken);
         
         return Ok(pendingTasks);
+    }
+    
+    [Authorize]
+    [HttpPatch("{id:guid}/approve")]
+    public async Task<IActionResult> ApproveResolution(Guid id, CancellationToken cancellationToken)
+    {
+        await _sender.Send(new ApproveResolutionCommand(id), cancellationToken);
+        
+        // TODO Futuro: Aquí dispararías la lógica real para ejecutar el sobrecupo u otra acción
+        
+        return NoContent(); // 204 No Content (Éxito estándar para un PATCH)
+    }
+
+    [Authorize]
+    [HttpPatch("{id:guid}/reject")]
+    public async Task<IActionResult> RejectResolution(Guid id, CancellationToken cancellationToken)
+    {
+        await _sender.Send(new RejectResolutionCommand(id), cancellationToken);
+        return NoContent();
     }
 }
 

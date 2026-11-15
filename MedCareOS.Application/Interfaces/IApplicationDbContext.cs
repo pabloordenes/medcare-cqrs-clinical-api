@@ -12,6 +12,7 @@ public interface IApplicationDbContext
     DbSet<Box> Boxes { get; }
     DbSet<User> Users { get; }
     DbSet<AiResolutionTask> AiResolutionTasks { get; }
+    DbSet<Notification> Notifications { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
