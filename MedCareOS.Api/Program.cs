@@ -76,6 +76,7 @@ builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+builder.Services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
 builder.Services.AddScoped<IApplicationDbContext>(sp => 
     sp.GetRequiredService<ApplicationDbContext>());
 
