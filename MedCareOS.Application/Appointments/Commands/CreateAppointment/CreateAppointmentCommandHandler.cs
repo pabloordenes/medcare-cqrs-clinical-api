@@ -4,6 +4,8 @@ using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Repositories;
 using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Omro.Domain.ResolutionTasks;
 
 namespace MedCareOS.Application.Appointments.Commands.CreateAppointment;
@@ -17,11 +19,13 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly IStaffRepository _staffRepository;
     private readonly IAiClinicalService _aiClinicalService;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public CreateAppointmentCommandHandler(IAppointmentRepository appointmentRepository,
         IPatientRepository patientRepository, IUnitOfWork unitOfWork,
         IScheduleBlockRepository scheduleBlockRepository, IStaffRepository staffRepository,
-        IAiClinicalService aiClinicalService, IPublishEndpoint publishEndpoint)
+        IAiClinicalService aiClinicalService, IPublishEndpoint publishEndpoint, 
+        IServiceScopeFactory scopeFactory)
     {
         _appointmentRepository = appointmentRepository;
         _patientRepository = patientRepository;
@@ -30,76 +34,104 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         _staffRepository = staffRepository;
         _aiClinicalService = aiClinicalService;
         _publishEndpoint = publishEndpoint;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<Guid> Handle(CreateAppointmentCommand request, CancellationToken cancellationToken)
     {
         var patient = await _patientRepository.GetPatientByIdAsync(request.PatientId, cancellationToken);
-        if (patient == null)
-            throw new InvalidOperationException("El paciente no existe."); // futura excepcion personalizada
+        if (patient == null) throw new InvalidOperationException("El paciente no existe."); // futura excepcion personalizada
         
         var scheduleBlock = await _scheduleBlockRepository.GetByIdAsync(request.ScheduleBlockId, cancellationToken);
-        if (scheduleBlock == null)
-            throw new InvalidOperationException("El bloque horario no existe.");
+        if (scheduleBlock == null) throw new InvalidOperationException("El bloque horario no existe.");
 
         var staff = await _staffRepository.GetByIdAsync(scheduleBlock.StaffId, cancellationToken);
-        if (staff == null)
-            throw new InvalidOperationException("El staff no existe.");
+        if (staff == null) throw new InvalidOperationException("El staff no existe.");
         
         var newAppointment = Appointment.Create(
             request.ScheduleBlockId,
             request.PatientId,
             request.SymptomsRaw,
             request.SchedulingSource);
-
-        // calculos requeridos por el modelo predictivo
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        int age = today.Year - patient.DateOfBirth.Year;
-        if (patient.DateOfBirth > today.AddYears(-age)) age--; // ajuste cumpleaños
         
-        int daysOfWaiting = (scheduleBlock.StartTime.Date - DateTime.UtcNow.Date).Days;
-        if (daysOfWaiting < 0) daysOfWaiting = 0;
-        
-        int previousAbsences = await _appointmentRepository.GetNoShowCountByPatientId(request.PatientId, cancellationToken);
-
-        string specialtyNormalized = staff.Specialty?
-            .Trim()
-            .ToLowerInvariant()
-            .Replace(" ", "_") ?? "medicina_general";
-        
-        var predictRequest = new PredictRequestDto(
-            newAppointment.Id,
-            age,
-            patient.Gender,
-            daysOfWaiting,
-            specialtyNormalized,
-            previousAbsences,
-            "ninguno"
-        );
-        
-        var nlpTask = _aiClinicalService.GetNlpSummaryAsync(newAppointment.Id, request.SymptomsRaw, cancellationToken);
-        var predictTask = _aiClinicalService.PredictNoShowRiskAsync(predictRequest, cancellationToken);
-        
-        await Task.WhenAll(nlpTask, predictTask); // enviamos ambas peticiones a la api al mismo tiempo
-        
-        var nlpResult = await nlpTask;
-        var predictResult = await predictTask;
-
-        string processedSymptomsJson = JsonSerializer.Serialize(nlpResult.ExtractedSymptoms);
-        // actualizamos usando metodos del aggregate
-        newAppointment.ApplyNlpAnalysis(nlpResult.Summary, processedSymptomsJson);
-        newAppointment.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
-
+        // guardamos la cita de inmediato
         await _appointmentRepository.AddAppointmentAsync(newAppointment, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         
-        if (predictResult.RiskBand == "Alto" || predictResult.RiskScore >= 0.5m)
+        // extraemos variables primitivas para no arrastrar las entidades al otro hilo
+        var appointmentId = newAppointment.Id;
+        var patientDob = patient.DateOfBirth;
+        var patientGender = patient.Gender;
+        var blockStartTime = scheduleBlock.StartTime;
+        var staffSpecialty = staff.Specialty;
+        var symptomsRaw = request.SymptomsRaw;
+        var patientId = request.PatientId;
+        
+        // ejecucion de ia en segundo plano
+        // FIRE-AND-FORGET
+        _ = Task.Run(async () =>
         {
-            await _publishEndpoint.Publish(new AnomalyEvent(
-                predictResult.RiskScore,
-                newAppointment.Id
-            ), cancellationToken);
-        }
+            // creamos un ciclo de vida nuevo para que el DbContext no muera con el HTTP Request
+            using var scope = _scopeFactory.CreateScope();
+            
+            var aiService = scope.ServiceProvider.GetRequiredService<IAiClinicalService>();
+            var appRepo = scope.ServiceProvider.GetRequiredService<IAppointmentRepository>();
+            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var publisher = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<CreateAppointmentCommandHandler>>();
+
+            try
+            {
+                // reconstruimos la lógica matemática
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                int age = today.Year - patientDob.Year;
+                if (patientDob > today.AddYears(-age)) age--;
+
+                int daysOfWaiting = (blockStartTime.Date - DateTime.UtcNow.Date).Days;
+                if (daysOfWaiting < 0) daysOfWaiting = 0;
+
+                // usamos CancellationToken.None para que la tarea no se cancele al devolver el 200 OK
+                int previousAbsences = await appRepo.GetNoShowCountByPatientId(patientId, CancellationToken.None);
+
+                string specialtyNormalized = staffSpecialty?.Trim().ToLowerInvariant().Replace(" ", "_") ?? "medicina_general";
+
+                var predictRequest = new PredictRequestDto(
+                    appointmentId, age, patientGender, daysOfWaiting, specialtyNormalized, previousAbsences, "ninguno"
+                );
+
+                // llamadas a Python
+                var nlpTask = aiService.GetNlpSummaryAsync(appointmentId, symptomsRaw, CancellationToken.None);
+                var predictTask = aiService.PredictNoShowRiskAsync(predictRequest, CancellationToken.None);
+
+                await Task.WhenAll(nlpTask, predictTask);
+
+                var nlpResult = await nlpTask;
+                var predictResult = await predictTask;
+
+                string processedSymptomsJson = JsonSerializer.Serialize(nlpResult.ExtractedSymptoms);
+
+                // recuperamos la cita en este nuevo DbContext y la actualizamos
+                var appointmentToUpdate = await appRepo.GetAppointmentByIdAsync(appointmentId, CancellationToken.None);
+                if (appointmentToUpdate != null)
+                {
+                    appointmentToUpdate.ApplyNlpAnalysis(nlpResult.Summary, processedSymptomsJson);
+                    appointmentToUpdate.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
+                    
+                    await uow.SaveChangesAsync(CancellationToken.None);
+                    logger.LogInformation("Análisis de IA completado y guardado para la cita {CitaId}", appointmentId);
+                }
+
+                // llamamos al orquestador si el riesgo es alto
+                if (predictResult.RiskBand == "Alto" || predictResult.RiskScore >= 0.5m)
+                {
+                    await publisher.Publish(new AnomalyEvent(predictResult.RiskScore, appointmentId), CancellationToken.None);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Fallo catastrófico en el background worker de IA para la cita {CitaId}", appointmentId);
+            }
+        });
         
         return newAppointment.Id;
     }
