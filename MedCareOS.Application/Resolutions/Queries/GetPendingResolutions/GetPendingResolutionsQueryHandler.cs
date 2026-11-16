@@ -1,4 +1,5 @@
 ﻿using MedCareOS.Application.Interfaces;
+using MedCareOS.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,14 +18,14 @@ public class GetPendingResolutionsQueryHandler : IRequestHandler<GetPendingResol
     {
         var pendingResolutions = await _dbContext.AiResolutionTasks
             .AsNoTracking()
-            .Where(t => t.Status == "Pending")
+            .Where(t => t.Status == AiResolutionStatus.Pending)
             .OrderByDescending(t => t.RiskProbability) // criticas primero
             .Select(t => new ResolutionTaskDto(
                 t.Id,
                 t.ResourceId,
                 t.RiskProbability,
                 t.AiPlanJson,
-                t.Status,
+                t.Status.ToString(),
                 t.CreatedAt
             ))
             .ToListAsync(cancellationToken);

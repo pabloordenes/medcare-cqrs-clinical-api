@@ -121,4 +121,44 @@ public class CreateAppointmentCommandHandlerTests
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("El paciente no existe.");
     }
+
+    [Fact]
+    public async Task Handle_WhenScheduleBlockAlreadyOccupied_ThrowsDuplicateAppointmentException()
+    {
+        var cancellationToken = CancellationToken.None;
+        var patientId = Guid.NewGuid();
+        var scheduleBlockId = Guid.NewGuid();
+        var patient = Patient.Create(
+            Guid.NewGuid(), "12.345.678-9", "Ana", "Perez", new DateOnly(1990, 1, 1), "F", "+56912345678");
+        var scheduleBlock = ScheduleBlock.Create(
+            Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(1).AddMinutes(30),
+            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            new TimeOnly(9, 0), new TimeOnly(9, 30), [DateTime.UtcNow.DayOfWeek]);
+
+        var appointmentRepository = new Mock<IAppointmentRepository>();
+        appointmentRepository
+            .Setup(r => r.HasActiveAppointmentForBlockAsync(scheduleBlockId, cancellationToken))
+            .ReturnsAsync(true);
+
+        var patientRepository = new Mock<IPatientRepository>();
+        patientRepository.Setup(r => r.GetPatientByIdAsync(patientId, cancellationToken)).ReturnsAsync(patient);
+
+        var scheduleBlockRepository = new Mock<IScheduleBlockRepository>();
+        scheduleBlockRepository.Setup(r => r.GetByIdAsync(scheduleBlockId, cancellationToken)).ReturnsAsync(scheduleBlock);
+
+        var handler = new CreateAppointmentCommandHandler(
+            appointmentRepository.Object,
+            patientRepository.Object,
+            Mock.Of<IUnitOfWork>(),
+            scheduleBlockRepository.Object,
+            Mock.Of<IStaffRepository>(),
+            Mock.Of<IAiClinicalService>(),
+            Mock.Of<IPublishEndpoint>(),
+            Mock.Of<IServiceScopeFactory>());
+
+        var command = new CreateAppointmentCommand(scheduleBlockId, patientId, "Dolor", "paciente");
+        Func<Task> act = () => handler.Handle(command, cancellationToken);
+
+        await act.Should().ThrowAsync<MedCareOS.Domain.Exceptions.DuplicateAppointmentException>();
+    }
 }

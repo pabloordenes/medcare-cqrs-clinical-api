@@ -19,7 +19,7 @@ public class StartConsultationCommandHandler : IRequestHandler<StartConsultation
         var appointment = await _appointmentRepository.GetAppointmentByIdAsync(request.AppointmentId, cancellationToken);
         
         if (appointment is null)
-            throw new Exception($"La cita con id {request.AppointmentId} no se encuentra.");
+            throw new KeyNotFoundException($"La cita con id {request.AppointmentId} no se encuentra.");
         
         appointment.StartConsultation();
         

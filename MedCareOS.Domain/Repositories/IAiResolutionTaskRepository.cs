@@ -7,4 +7,5 @@ public interface IAiResolutionTaskRepository
     void Add(AiResolutionTask aiResolutionTask);
     Task<List<AiResolutionTask>> GetPendingTasksAsync(CancellationToken cancellationToken = default);
     Task<AiResolutionTask?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<AiResolutionTask?> GetPendingByResourceIdAsync(Guid resourceId, CancellationToken cancellationToken = default);
 }

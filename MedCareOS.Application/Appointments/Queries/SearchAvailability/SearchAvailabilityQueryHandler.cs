@@ -22,8 +22,9 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
             var availableScheduleBlocks = await (
 
                 from block in _dbContext.ScheduleBlocks
-                 
-                where block.StartTime.Date >= desdeUtc
+
+                where !block.IsOverbook
+                    && block.StartTime.Date >= desdeUtc
                     && block.EndTime.Date < hastaFinDelDiaUtc
 
                 join staff in _dbContext.Staffs on block.StaffId equals staff.Id

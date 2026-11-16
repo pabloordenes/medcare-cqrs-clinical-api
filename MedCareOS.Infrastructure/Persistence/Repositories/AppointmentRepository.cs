@@ -29,4 +29,21 @@ public class AppointmentRepository : IAppointmentRepository
     {
         return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);
     }
+
+    public async Task<bool> HasActiveAppointmentForBlockAsync(Guid scheduleBlockId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Appointments
+            .AnyAsync(a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled, cancellationToken);
+    }
+
+    public async Task<List<Appointment>> GetPastUnattendedAppointmentsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
+    {
+        return await (
+            from app in _dbContext.Appointments
+            join block in _dbContext.ScheduleBlocks on app.ScheduleBlockId equals block.Id
+            where (app.Status == AppointmentStatus.Scheduled || app.Status == AppointmentStatus.Confirmed)
+                  && block.EndTime < utcNow
+            select app
+        ).ToListAsync(cancellationToken);
+    }
 }

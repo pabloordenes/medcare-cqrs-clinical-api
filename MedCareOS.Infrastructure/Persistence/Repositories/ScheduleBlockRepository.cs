@@ -7,7 +7,7 @@ namespace MedCareOS.Infrastructure.Persistence.Repositories;
 public class ScheduleBlockRepository : IScheduleBlockRepository
 {
     private readonly ApplicationDbContext _dbContext;
-    
+
     public ScheduleBlockRepository(ApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
@@ -17,8 +17,9 @@ public class ScheduleBlockRepository : IScheduleBlockRepository
         Guid boxId, DateTime startTime, DateTime endTime, CancellationToken cancellationToken)
     {
         return await _dbContext.ScheduleBlocks.Where(
-            sb => (sb.StaffId == staffId || sb.BoxId == boxId) 
-                  && sb.StartTime >= startTime && sb.StartTime <= endTime)
+                sb => !sb.IsOverbook
+                      && (sb.StaffId == staffId || sb.BoxId == boxId)
+                      && sb.StartTime >= startTime && sb.StartTime <= endTime)
             .AsNoTracking().ToListAsync(cancellationToken);
     }
 
@@ -30,5 +31,12 @@ public class ScheduleBlockRepository : IScheduleBlockRepository
     public async Task<ScheduleBlock?> GetByIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken)
     {
         return await _dbContext.ScheduleBlocks.FirstOrDefaultAsync(sb => sb.Id == scheduleBlockId, cancellationToken);
+    }
+
+    public async Task<ScheduleBlock?> GetOverbookByAppointmentIdAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.ScheduleBlocks
+            .AsNoTracking()
+            .FirstOrDefaultAsync(sb => sb.IsOverbook && sb.SourceAppointmentId == sourceAppointmentId, cancellationToken);
     }
 }

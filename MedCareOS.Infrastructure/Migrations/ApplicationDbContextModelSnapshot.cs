@@ -34,6 +34,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("ai_plan_json");
 
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -115,7 +123,10 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.HasIndex("PatientId");
 
-                    b.HasIndex("ScheduleBlockId");
+                    b.HasIndex("ScheduleBlockId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_citas_schedule_block_id")
+                        .HasFilter("estado <> 'Cancelled'");
 
                     b.ToTable("citas", (string)null);
                 });
@@ -269,6 +280,28 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.ToTable("pacientes", (string)null);
                 });
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.ProcessedWebhookKey", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("endpoint");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("idempotency_keys", (string)null);
+                });
+
             modelBuilder.Entity("MedCareOS.Domain.Entities.ScheduleBlock", b =>
                 {
                     b.Property<Guid>("Id")
@@ -284,30 +317,39 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_fin");
 
+                    b.Property<bool>("IsOverbook")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_overbook");
+
                     b.PrimitiveCollection<int[]>("RuleDaysOfWeek")
-                        .IsRequired()
                         .HasColumnType("integer[]")
                         .HasColumnName("rule_days_of_week");
 
-                    b.Property<DateOnly>("RuleEndDate")
+                    b.Property<DateOnly?>("RuleEndDate")
                         .HasColumnType("date")
                         .HasColumnName("rule_end_date");
 
-                    b.Property<TimeOnly>("RuleEndTime")
+                    b.Property<TimeOnly?>("RuleEndTime")
                         .HasColumnType("time")
                         .HasColumnName("rule_end_time");
 
-                    b.Property<Guid>("RuleGroupId")
+                    b.Property<Guid?>("RuleGroupId")
                         .HasColumnType("uuid")
                         .HasColumnName("rule_group_id");
 
-                    b.Property<DateOnly>("RuleStartDate")
+                    b.Property<DateOnly?>("RuleStartDate")
                         .HasColumnType("date")
                         .HasColumnName("rule_start_date");
 
-                    b.Property<TimeOnly>("RuleStartTime")
+                    b.Property<TimeOnly?>("RuleStartTime")
                         .HasColumnType("time")
                         .HasColumnName("rule_start_time");
+
+                    b.Property<Guid?>("SourceAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_appointment_id");
 
                     b.Property<Guid>("StaffId")
                         .HasColumnType("uuid")
@@ -320,6 +362,11 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BoxId");
+
+                    b.HasIndex("SourceAppointmentId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_schedule_blocks_source_appointment_id")
+                        .HasFilter("source_appointment_id IS NOT NULL");
 
                     b.HasIndex("StaffId");
 
@@ -496,6 +543,11 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasForeignKey("BoxId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("SourceAppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("MedCareOS.Domain.Entities.Staff", null)
                         .WithMany()

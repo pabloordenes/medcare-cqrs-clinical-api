@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -41,7 +42,7 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
 
         var rescatadas = await _dbContext.AiResolutionTasks
             .AsNoTracking()
-            .CountAsync(t => t.Status == "Approved", cancellationToken);
+            .CountAsync(t => t.Status == AiResolutionStatus.Approved || t.Status == AiResolutionStatus.Executed, cancellationToken);
 
         // 2. IN-MEMORY SLICING: Cálculos base rápidos
         int total = citasRaw.Count;
@@ -117,7 +118,7 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
         var alertasRiesgo = citasRaw
             .Where(c => (c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed) 
                      && c.StartTime > DateTime.UtcNow 
-                     && (c.RiskBand == "Alto" || c.NoShowRiskScore >= 0.5m))
+                     && (c.RiskBand == RiskThresholds.HighRiskBand || c.NoShowRiskScore >= RiskThresholds.ModerateRiskMin))
             .OrderByDescending(c => c.NoShowRiskScore)
             .Take(10) // Top 10 pacientes con más riesgo
             .Select(c => new CitaRiesgoDto(
