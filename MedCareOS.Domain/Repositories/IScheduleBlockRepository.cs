@@ -7,4 +7,5 @@ public interface IScheduleBlockRepository
     Task<List<ScheduleBlock>> GetAssignedBlocksInRangeAsync(Guid staffId, Guid boxId, DateTime startTime, DateTime endTime, CancellationToken cancellationToken);
     void AddRange(IEnumerable<ScheduleBlock> scheduleBlock);
     Task<ScheduleBlock?> GetByIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken);
+    Task<ScheduleBlock?> GetOverbookByAppointmentIdAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default);
 }
