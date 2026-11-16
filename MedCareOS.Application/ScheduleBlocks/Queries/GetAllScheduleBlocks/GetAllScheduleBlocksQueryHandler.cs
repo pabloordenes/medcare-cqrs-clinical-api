@@ -7,7 +7,7 @@ namespace MedCareOS.Application.ScheduleBlocks.Queries.GetAllScheduleBlocks;
 public class GetAllScheduleBlocksQueryHandler : IRequestHandler<GetAllScheduleBlocksQuery, List<ScheduleBlockDto>>
 {
     private readonly IApplicationDbContext _dbContext;
-    
+
     public GetAllScheduleBlocksQueryHandler(IApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
@@ -15,10 +15,15 @@ public class GetAllScheduleBlocksQueryHandler : IRequestHandler<GetAllScheduleBl
 
     public async Task<List<ScheduleBlockDto>> Handle(GetAllScheduleBlocksQuery request, CancellationToken cancellationToken)
     {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
         var rawBlocks = await (
             from block in _dbContext.ScheduleBlocks
-            
-            where block.RuleEndDate >= DateOnly.FromDateTime(DateTime.Now)
+
+            where !block.IsOverbook
+                  && block.RuleGroupId != null
+                  && block.RuleEndDate != null
+                  && block.RuleEndDate >= today
 
             join staff in _dbContext.Staffs on block.StaffId equals staff.Id
 
@@ -26,25 +31,25 @@ public class GetAllScheduleBlocksQueryHandler : IRequestHandler<GetAllScheduleBl
 
             select new
             {
-                block.RuleGroupId,
+                RuleGroupId = block.RuleGroupId!.Value,
                 block.StaffId,
                 StaffFullName = staff.FirstName + " " + staff.LastName,
                 StaffSpecialty = staff.Specialty ?? "",
                 StaffRut = staff.Rut,
                 block.BoxId,
                 BoxName = box.Name,
-                BoxLocation = box.Floor ?? "", // O la propiedad que guarde el sector/piso
-                block.RuleStartDate,
-                block.RuleEndDate,
-                block.RuleStartTime,
-                block.RuleEndTime,
-                block.RuleDaysOfWeek
+                BoxLocation = box.Floor ?? "",
+                RuleStartDate = block.RuleStartDate!.Value,
+                RuleEndDate = block.RuleEndDate!.Value,
+                RuleStartTime = block.RuleStartTime!.Value,
+                RuleEndTime = block.RuleEndTime!.Value,
+                RuleDaysOfWeek = block.RuleDaysOfWeek
             }
         ).AsNoTracking()
             .ToListAsync(cancellationToken);
 
         var uniqueRule = rawBlocks.DistinctBy(x => x.RuleGroupId);
-            
+
         var result = uniqueRule
             .Select(x => new ScheduleBlockDto(
                 x.RuleGroupId,
@@ -59,9 +64,9 @@ public class GetAllScheduleBlocksQueryHandler : IRequestHandler<GetAllScheduleBl
                 x.RuleEndDate,
                 x.RuleStartTime,
                 x.RuleEndTime,
-                x.RuleDaysOfWeek
+                x.RuleDaysOfWeek ?? new List<DayOfWeek>()
             )).ToList();
-        
+
         return result;
     }
 }
