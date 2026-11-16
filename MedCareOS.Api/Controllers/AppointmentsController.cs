@@ -7,9 +7,12 @@ using MedCareOS.Application.Appointments.Commands.MonitorAppointment;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
 using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Exceptions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace MedCareOS.Api.Controllers;
 
@@ -41,8 +44,20 @@ public class AppointmentsController : ControllerBase
             effectiveCommand = command with { AuthenticatedUserId = userId };
         }
 
-        var appointmentId = await _sender.Send(effectiveCommand, cancellationToken);
-        return Ok(appointmentId);
+        try
+        {
+            var appointmentId = await _sender.Send(effectiveCommand, cancellationToken);
+            return Ok(appointmentId);
+        }
+        catch (DuplicateAppointmentException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } ||
+                                           ex.InnerException?.Message.Contains("IX_citas_schedule_block_id", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return Conflict(new { message = "El bloque horario seleccionado ya se encuentra reservado." });
+        }
     }
     
     // dto simple

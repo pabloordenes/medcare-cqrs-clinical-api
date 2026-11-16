@@ -3,6 +3,7 @@ using MassTransit;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Exceptions;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +60,10 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         
         var scheduleBlock = await _scheduleBlockRepository.GetByIdAsync(request.ScheduleBlockId, cancellationToken);
         if (scheduleBlock == null) throw new InvalidOperationException("El bloque horario no existe.");
+
+        var blockOccupied = await _appointmentRepository.HasActiveAppointmentForBlockAsync(request.ScheduleBlockId, cancellationToken);
+        if (blockOccupied)
+            throw new DuplicateAppointmentException("El bloque horario seleccionado ya se encuentra reservado.");
 
         var staff = await _staffRepository.GetByIdAsync(scheduleBlock.StaffId, cancellationToken);
         if (staff == null) throw new InvalidOperationException("El staff no existe.");
