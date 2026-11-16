@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using MassTransit;
+using MedCareOS.Api.BackgroundServices;
 using MedCareOS.Api.Security;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Interfaces;
@@ -151,6 +152,7 @@ builder.Services.Configure<AiServiceOptions>(
     builder.Configuration.GetSection(AiServiceOptions.SectionName));
 
 builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
+builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {

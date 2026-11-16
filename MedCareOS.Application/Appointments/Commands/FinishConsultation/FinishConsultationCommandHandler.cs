@@ -16,10 +16,10 @@ public class FinishConsultationCommandHandler : IRequestHandler<FinishConsultati
 
     public async Task Handle(FinishConsultationCommand request, CancellationToken cancellationToken)
     {
-        var appointment = await _appointmentRepository.GetAppointmentByIdAsync(request.AppointmentId);
+        var appointment = await _appointmentRepository.GetAppointmentByIdAsync(request.AppointmentId, cancellationToken);
         
         if (appointment is null)
-            throw new Exception("Cita no encontrada."); // TODO: crear excepcion NotFoundException personalizada
+            throw new KeyNotFoundException("Cita no encontrada.");
         
         appointment.FinishConsultation();
         
