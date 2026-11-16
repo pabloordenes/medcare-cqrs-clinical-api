@@ -42,7 +42,7 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
 
         var rescatadas = await _dbContext.AiResolutionTasks
             .AsNoTracking()
-            .CountAsync(t => t.Status == "Approved", cancellationToken);
+            .CountAsync(t => t.Status == AiResolutionStatus.Approved || t.Status == AiResolutionStatus.Executed, cancellationToken);
 
         // 2. IN-MEMORY SLICING: Cálculos base rápidos
         int total = citasRaw.Count;

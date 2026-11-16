@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using MedCareOS.Api.Filters;
 using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Commands.FinishConsultation;
 using MedCareOS.Application.Appointments.Commands.GenerateOverbook;
@@ -82,6 +83,7 @@ public class AppointmentsController : ControllerBase
     public record OverbookPayloadDto(Guid ResourceId, decimal TargetRisk, bool AutoApprove);
 
     [Authorize(Policy = "OmroService")]
+    [TypeFilter(typeof(IdempotencyKeyFilter))]
     [HttpPost("overbook")]
     public async Task<IActionResult> GenerateOverbookWebhook([FromBody] OverbookPayloadDto payload, CancellationToken cancellationToken)
     {
@@ -98,6 +100,7 @@ public class AppointmentsController : ControllerBase
     public record MonitorPayloadDto(Guid ResourceId, bool RequiresAction);
     
     [Authorize(Policy = "OmroService")]
+    [TypeFilter(typeof(IdempotencyKeyFilter))]
     [HttpPost("monitor")]
     public async Task<IActionResult> MonitorAppointmentWebhook([FromBody] MonitorPayloadDto payload, CancellationToken cancellationToken)
     {

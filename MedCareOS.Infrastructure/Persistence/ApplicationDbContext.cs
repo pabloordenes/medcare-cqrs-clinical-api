@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<User> Users { get; set; }
     public DbSet<WaitingList> WaitingLists { get; set; }
     public DbSet<AiResolutionTask> AiResolutionTasks { get; set; }
+    public DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

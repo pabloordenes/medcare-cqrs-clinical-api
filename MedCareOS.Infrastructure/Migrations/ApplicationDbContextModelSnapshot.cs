@@ -34,6 +34,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("ai_plan_json");
 
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -267,6 +275,28 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("pacientes", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.ProcessedWebhookKey", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("endpoint");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("idempotency_keys", (string)null);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.ScheduleBlock", b =>
