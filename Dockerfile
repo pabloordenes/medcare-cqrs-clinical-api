@@ -13,6 +13,7 @@ COPY ["MedCareOS.Api/MedCareOS.Api.csproj", "MedCareOS.Api/"]
 COPY ["MedCareOS.Application/MedCareOS.Application.csproj", "MedCareOS.Application/"]
 COPY ["MedCareOS.Domain/MedCareOS.Domain.csproj", "MedCareOS.Domain/"]
 COPY ["MedCareOS.Infrastructure/MedCareOS.Infrastructure.csproj", "MedCareOS.Infrastructure/"]
+COPY ["Omro.Contracts/Omro.Contracts.csproj", "Omro.Contracts/"]
 
 # Restauramos dependencias
 RUN dotnet restore "MedCareOS.Api/MedCareOS.Api.csproj"

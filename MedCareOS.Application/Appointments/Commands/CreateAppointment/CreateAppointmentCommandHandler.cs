@@ -1,12 +1,13 @@
 ﻿using System.Text.Json;
 using MassTransit;
 using MedCareOS.Application.Common.Interfaces;
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Omro.Domain.ResolutionTasks;
+using Omro.Contracts.Events;
 
 namespace MedCareOS.Application.Appointments.Commands.CreateAppointment;
 
@@ -121,10 +122,22 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
                     logger.LogInformation("Análisis de IA completado y guardado para la cita {CitaId}", appointmentId);
                 }
 
-                // llamamos al orquestador si el riesgo es alto
-                if (predictResult.RiskBand == "Alto" || predictResult.RiskScore >= 0.5m)
+                // llamamos al orquestador si el riesgo es moderado o alto
+                if (predictResult.RiskBand == RiskThresholds.HighRiskBand || predictResult.RiskScore >= RiskThresholds.ModerateRiskMin)
                 {
-                    await publisher.Publish(new AnomalyEvent(predictResult.RiskScore, appointmentId), CancellationToken.None);
+                    await publisher.Publish(
+                        new AnomalyDetected(
+                            TenantId: RiskThresholds.DefaultTenantId,
+                            CorrelationId: Guid.NewGuid(),
+                            AnomalyType: RiskThresholds.AppointmentNoShowAnomalyType,
+                            ResourceId: appointmentId,
+                            RiskProbability: predictResult.RiskScore,
+                            Attributes: new Dictionary<string, string>
+                            {
+                                ["riskBand"] = predictResult.RiskBand ?? string.Empty,
+                                ["specialty"] = specialtyNormalized
+                            }),
+                        CancellationToken.None);
                 }
             }
             catch (Exception ex)
