@@ -31,9 +31,13 @@ builder.Services.AddMassTransit(x =>
     x.UsingRabbitMq((context, cfg) =>
     {
         var rmqHost = builder.Configuration["RabbitMq:Host"] ?? "localhost";
-        var rmqVHost = builder.Configuration["RabbitMq:VirtualHost"] ?? "/";
         var rmqUser = builder.Configuration["RabbitMq:Username"] ?? "guest";
         var rmqPass = builder.Configuration["RabbitMq:Password"] ?? "guest";
+        var rmqVHost = builder.Configuration["RabbitMq:VirtualHost"];
+        if (string.IsNullOrWhiteSpace(rmqVHost))
+        {
+            rmqVHost = rmqHost is "localhost" or "127.0.0.1" or "rabbitmq" ? "/" : rmqUser;
+        }
 
         cfg.Host(rmqHost, rmqVHost, h => {
             h.Username(rmqUser);
@@ -63,10 +67,29 @@ string? omroPem = !string.IsNullOrWhiteSpace(omroAuthOptions.PublicKeyContent)
         ? File.ReadAllText(omroAuthOptions.PublicKeyPath)
         : null);
 
+if (string.IsNullOrWhiteSpace(omroPem))
+{
+    var aiPrivateKeyContent = builder.Configuration["AiService:PrivateKeyContent"];
+    var aiPrivateKeyPath = builder.Configuration["AiService:PrivateKeyPath"];
+
+    if (!string.IsNullOrWhiteSpace(aiPrivateKeyContent))
+    {
+        omroPem = aiPrivateKeyContent;
+    }
+    else if (!string.IsNullOrWhiteSpace(aiPrivateKeyPath) && File.Exists(aiPrivateKeyPath))
+    {
+        omroPem = File.ReadAllText(aiPrivateKeyPath);
+    }
+    else if (File.Exists("/etc/secrets/dotnet-private.pem"))
+    {
+        omroPem = File.ReadAllText("/etc/secrets/dotnet-private.pem");
+    }
+}
+
 if (!string.IsNullOrWhiteSpace(omroPem))
 {
     var rsa = RSA.Create();
-    rsa.ImportFromPem(omroPem.ToCharArray());
+    rsa.ImportFromPem(omroPem.Replace("\\n", "\n").ToCharArray());
     omroPublicKey = new RsaSecurityKey(rsa);
 }
 
