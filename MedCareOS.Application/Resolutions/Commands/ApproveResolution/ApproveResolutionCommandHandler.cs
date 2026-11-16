@@ -1,7 +1,8 @@
 ﻿using MassTransit;
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Repositories;
 using MediatR;
-using Omro.Domain.ResolutionTasks;
+using Omro.Contracts.Events;
 
 namespace MedCareOS.Application.Resolutions.Commands.ApproveResolution;
 
@@ -28,6 +29,13 @@ public class ApproveResolutionCommandHandler : IRequestHandler<ApproveResolution
         task.Approve(); 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         
-        await _publishEndpoint.Publish(new ResolutionApprovedEvent(task.Id, task.AiPlanJson), cancellationToken);
+        await _publishEndpoint.Publish(
+            new ResolutionApproved(
+                TenantId: RiskThresholds.DefaultTenantId,
+                CorrelationId: Guid.NewGuid(),
+                ResolutionTaskId: task.Id,
+                ResourceId: task.ResourceId,
+                AiPlanJson: task.AiPlanJson),
+            cancellationToken);
     }
 }
