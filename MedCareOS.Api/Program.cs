@@ -24,11 +24,12 @@ builder.Services.AddMassTransit(x =>
     // cloud amqp: masstransit 
     x.UsingRabbitMq((context, cfg) =>
     {
-        var rmqHost = builder.Configuration["RabbitMq:Host"];
-        var rmqUser = builder.Configuration["RabbitMq:Username"];
-        var rmqPass = builder.Configuration["RabbitMq:Password"];
+        var rmqHost = builder.Configuration["RabbitMq:Host"] ?? "localhost";
+        var rmqVHost = builder.Configuration["RabbitMq:VirtualHost"] ?? "/";
+        var rmqUser = builder.Configuration["RabbitMq:Username"] ?? "guest";
+        var rmqPass = builder.Configuration["RabbitMq:Password"] ?? "guest";
 
-        cfg.Host(rmqHost, rmqUser, h => {
+        cfg.Host(rmqHost, rmqVHost, h => {
             h.Username(rmqUser);
             h.Password(rmqPass);
         });
