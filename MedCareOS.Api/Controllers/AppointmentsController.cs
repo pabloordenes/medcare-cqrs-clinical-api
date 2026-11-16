@@ -1,9 +1,11 @@
-﻿using MedCareOS.Application.Appointments.Commands.CreateAppointment;
+﻿using System.Security.Claims;
+using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Commands.FinishConsultation;
 using MedCareOS.Application.Appointments.Commands.GenerateOverbook;
 using MedCareOS.Application.Appointments.Commands.MonitorAppointment;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
 using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
+using MedCareOS.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,17 +23,31 @@ public class AppointmentsController : ControllerBase
         _sender = sender;
     }
     
+    [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentCommand command,
         CancellationToken cancellationToken)
     {
-        var appointmentId = await _sender.Send(command, cancellationToken);
+        var effectiveCommand = command with { AuthenticatedUserId = null };
+
+        if (User.IsInRole(nameof(UserRole.Paciente)) ||
+            (!User.IsInRole(nameof(UserRole.Recepcionista)) && !User.IsInRole(nameof(UserRole.Administrador))))
+        {
+            var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+            if (!Guid.TryParse(sub, out var userId))
+                return Forbid();
+
+            effectiveCommand = command with { AuthenticatedUserId = userId };
+        }
+
+        var appointmentId = await _sender.Send(effectiveCommand, cancellationToken);
         return Ok(appointmentId);
     }
     
     // dto simple
     public record UpdateAppointmentStatusRequestDto(string Estado);
 
+    [Authorize(Roles = "Medico,Recepcionista,Administrador")]
     [HttpPatch("{id:guid}/estado")]
     public async Task<IActionResult> UpdateAppointmentStatusRequest([FromRoute] Guid id, 
         [FromBody] UpdateAppointmentStatusRequestDto request, CancellationToken cancellationToken)
@@ -65,6 +81,7 @@ public class AppointmentsController : ControllerBase
     
     public record OverbookPayloadDto(Guid ResourceId, decimal TargetRisk, bool AutoApprove);
 
+    [Authorize(Policy = "OmroService")]
     [HttpPost("overbook")]
     public async Task<IActionResult> GenerateOverbookWebhook([FromBody] OverbookPayloadDto payload, CancellationToken cancellationToken)
     {
@@ -80,6 +97,7 @@ public class AppointmentsController : ControllerBase
     
     public record MonitorPayloadDto(Guid ResourceId, bool RequiresAction);
     
+    [Authorize(Policy = "OmroService")]
     [HttpPost("monitor")]
     public async Task<IActionResult> MonitorAppointmentWebhook([FromBody] MonitorPayloadDto payload, CancellationToken cancellationToken)
     {

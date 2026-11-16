@@ -6,5 +6,6 @@ public record CreateAppointmentCommand(
     Guid ScheduleBlockId,
     Guid PatientId,
     string SymptomsRaw,
-    string SchedulingSource
+    string SchedulingSource,
+    Guid? AuthenticatedUserId = null
     ) : IRequest<Guid>;

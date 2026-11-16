@@ -8,31 +8,37 @@ namespace MedCareOS.IntegrationTests;
 
 public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public TestAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, 
-        ILoggerFactory logger, UrlEncoder encoder) : base(options, logger, encoder) {}
+    public TestAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger, UrlEncoder encoder) : base(options, logger, encoder) { }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        // si no trae la cabecera exacta devolvemos NoResult() para que devuelva 401
-        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || 
+        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) ||
             authHeader.ToString() != "Test")
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
-        
-        // fabricamos usuario con el rol que el sistema espera
-        var claims = new[] 
-        { 
-            new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), 
-            new Claim(ClaimTypes.Role, "Medico") 
+
+        var role = Request.Headers.TryGetValue("X-Test-Role", out var roleHeader) && !string.IsNullOrWhiteSpace(roleHeader)
+            ? roleHeader.ToString()
+            : "Medico";
+
+        var userId = Request.Headers.TryGetValue("X-Test-UserId", out var userHeader) && Guid.TryParse(userHeader, out var parsedUserId)
+            ? parsedUserId.ToString()
+            : Guid.NewGuid().ToString();
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId),
+            new Claim("sub", userId),
+            new Claim(ClaimTypes.Role, role),
+            new Claim("role", role)
         };
-        
-        // asignamos la entidad al esquema test
+
         var identity = new ClaimsIdentity(claims, "Test");
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, "Test");
 
-        // decimos que el usuario paso la validacion exitosamente
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }
