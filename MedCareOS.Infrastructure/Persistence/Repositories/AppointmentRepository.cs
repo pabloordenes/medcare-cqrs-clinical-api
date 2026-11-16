@@ -29,4 +29,10 @@ public class AppointmentRepository : IAppointmentRepository
     {
         return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);
     }
+
+    public async Task<bool> HasActiveAppointmentForBlockAsync(Guid scheduleBlockId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Appointments
+            .AnyAsync(a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled, cancellationToken);
+    }
 }

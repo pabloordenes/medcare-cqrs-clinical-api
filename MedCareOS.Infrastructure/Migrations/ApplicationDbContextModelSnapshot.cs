@@ -123,7 +123,10 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.HasIndex("PatientId");
 
-                    b.HasIndex("ScheduleBlockId");
+                    b.HasIndex("ScheduleBlockId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_citas_schedule_block_id")
+                        .HasFilter("estado <> 'Cancelled'");
 
                     b.ToTable("citas", (string)null);
                 });

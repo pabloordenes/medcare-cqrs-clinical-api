@@ -57,5 +57,10 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
             .WithMany()
             .HasForeignKey(x => x.PatientId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.ScheduleBlockId)
+            .HasDatabaseName("IX_citas_schedule_block_id")
+            .IsUnique()
+            .HasFilter("estado <> 'Cancelled'");
     }
 }
