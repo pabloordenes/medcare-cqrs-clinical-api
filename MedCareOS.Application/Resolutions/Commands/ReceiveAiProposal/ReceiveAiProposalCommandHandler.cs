@@ -23,6 +23,15 @@ public class ReceiveAiProposalCommandHandler : IRequestHandler<ReceiveAiProposal
     
     public async Task<Guid> Handle(ReceiveAiProposalCommand request, CancellationToken cancellationToken)
     {
+        var existingPending = await _repository.GetPendingByResourceIdAsync(request.ResourceId, cancellationToken);
+        if (existingPending != null)
+        {
+            _logger.LogInformation(
+                "Propuesta duplicada ignorada (idempotente) para recurso {ResourceId}. Retornando tarea existente {TaskId}.",
+                request.ResourceId, existingPending.Id);
+            return existingPending.Id;
+        }
+
         _logger.LogInformation(
             "Ingresando nueva propuesta de la IA (HITL) para el recurso {ResourceId} con riesgo {Risk}", 
             request.ResourceId, request.RiskProbability);

@@ -29,7 +29,14 @@ public class AiResolutionTaskConfiguration : IEntityTypeConfiguration<AiResoluti
 
         builder.Property(x => x.Status)
             .HasColumnName("estado")
+            .HasConversion<string>()
             .IsRequired();
+
+        builder.Property(x => x.ApprovedBy)
+            .HasColumnName("approved_by");
+
+        builder.Property(x => x.ApprovedAt)
+            .HasColumnName("approved_at");
 
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")

@@ -22,7 +22,7 @@ public class RejectResolutionCommandHandler : IRequestHandler<RejectResolutionCo
             throw new KeyNotFoundException("La tarea de resolución no existe.");
 
         // mutacion de dominio
-        task.Reject(); 
+        task.Reject(request.RejectedBy);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }

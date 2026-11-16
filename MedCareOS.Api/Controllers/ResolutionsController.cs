@@ -1,4 +1,6 @@
-﻿using MedCareOS.Application.Resolutions.Commands.ApproveResolution;
+﻿using System.Security.Claims;
+using MedCareOS.Api.Filters;
+using MedCareOS.Application.Resolutions.Commands.ApproveResolution;
 using MedCareOS.Application.Resolutions.Commands.ReceiveAiProposal;
 using MedCareOS.Application.Resolutions.Commands.RejectResolution;
 using MedCareOS.Application.Resolutions.Queries.GetPendingResolutions;
@@ -22,6 +24,7 @@ public class ResolutionsController : ControllerBase
     public record ResolutionProposalDto(Guid ResourceId, decimal RiskProbability, string AiPlanJson);
     
     [Authorize(Policy = "OmroService")]
+    [TypeFilter(typeof(IdempotencyKeyFilter))]
     [HttpPost("propose")]
     public async Task<IActionResult> ReceiveAiProposal([FromBody] ResolutionProposalDto payload, CancellationToken cancellationToken)
     {
@@ -47,19 +50,46 @@ public class ResolutionsController : ControllerBase
     [HttpPatch("{id:guid}/approve")]
     public async Task<IActionResult> ApproveResolution(Guid id, CancellationToken cancellationToken)
     {
-        await _sender.Send(new ApproveResolutionCommand(id), cancellationToken);
-        
-        // TODO Futuro: Aquí dispararías la lógica real para ejecutar el sobrecupo u otra acción
-        
-        return NoContent(); // 204 No Content (Éxito estándar para un PATCH)
+        var userId = GetCurrentUserId();
+        try
+        {
+            await _sender.Send(new ApproveResolutionCommand(id, userId), cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     [Authorize(Roles = "Administrador,Recepcionista")]
     [HttpPatch("{id:guid}/reject")]
     public async Task<IActionResult> RejectResolution(Guid id, CancellationToken cancellationToken)
     {
-        await _sender.Send(new RejectResolutionCommand(id), cancellationToken);
-        return NoContent();
+        var userId = GetCurrentUserId();
+        try
+        {
+            await _sender.Send(new RejectResolutionCommand(id, userId), cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return Guid.TryParse(sub, out var userId) ? userId : null;
     }
 }
 

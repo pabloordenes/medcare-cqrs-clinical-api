@@ -26,7 +26,7 @@ public class ApproveResolutionCommandHandler : IRequestHandler<ApproveResolution
         if (task == null) throw new KeyNotFoundException("La tarea de resolución no existe.");
 
         // mutacion de dominio
-        task.Approve(); 
+        task.Approve(request.ApprovedBy);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         
         await _publishEndpoint.Publish(
