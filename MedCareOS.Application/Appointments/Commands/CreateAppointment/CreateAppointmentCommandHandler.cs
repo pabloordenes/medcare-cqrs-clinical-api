@@ -40,8 +40,22 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
 
     public async Task<Guid> Handle(CreateAppointmentCommand request, CancellationToken cancellationToken)
     {
-        var patient = await _patientRepository.GetPatientByIdAsync(request.PatientId, cancellationToken);
-        if (patient == null) throw new InvalidOperationException("El paciente no existe."); // futura excepcion personalizada
+        Guid effectivePatientId = request.PatientId;
+        Patient? patient;
+
+        if (request.AuthenticatedUserId.HasValue)
+        {
+            patient = await _patientRepository.GetByUserId(request.AuthenticatedUserId.Value, cancellationToken);
+            if (patient == null)
+                throw new InvalidOperationException("El paciente autenticado no tiene un perfil registrado.");
+
+            effectivePatientId = patient.Id;
+        }
+        else
+        {
+            patient = await _patientRepository.GetPatientByIdAsync(effectivePatientId, cancellationToken);
+            if (patient == null) throw new InvalidOperationException("El paciente no existe."); // futura excepcion personalizada
+        }
         
         var scheduleBlock = await _scheduleBlockRepository.GetByIdAsync(request.ScheduleBlockId, cancellationToken);
         if (scheduleBlock == null) throw new InvalidOperationException("El bloque horario no existe.");
@@ -51,7 +65,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         
         var newAppointment = Appointment.Create(
             request.ScheduleBlockId,
-            request.PatientId,
+            effectivePatientId,
             request.SymptomsRaw,
             request.SchedulingSource);
         
@@ -66,7 +80,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         var blockStartTime = scheduleBlock.StartTime;
         var staffSpecialty = staff.Specialty;
         var symptomsRaw = request.SymptomsRaw;
-        var patientId = request.PatientId;
+        var patientId = effectivePatientId;
         
         // ejecucion de ia en segundo plano
         // FIRE-AND-FORGET

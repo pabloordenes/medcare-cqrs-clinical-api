@@ -1,10 +1,12 @@
 ﻿using MedCareOS.Application.Appointments.Queries.GetDailyAgenda;
 using MedCareOS.Application.Appointments.Queries.SearchAvailability;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MedCareOS.Api.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class AgendaController : ControllerBase

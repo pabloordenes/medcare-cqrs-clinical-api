@@ -21,6 +21,7 @@ public class ResolutionsController : ControllerBase
     
     public record ResolutionProposalDto(Guid ResourceId, decimal RiskProbability, string AiPlanJson);
     
+    [Authorize(Policy = "OmroService")]
     [HttpPost("propose")]
     public async Task<IActionResult> ReceiveAiProposal([FromBody] ResolutionProposalDto payload, CancellationToken cancellationToken)
     {
@@ -33,7 +34,7 @@ public class ResolutionsController : ControllerBase
         return Ok(new { message = "Propuesta de IA recibida exitosamente", taskId });
     }
     
-    [Authorize]
+    [Authorize(Roles = "Administrador,Recepcionista")]
     [HttpGet("pending")]
     public async Task<IActionResult> GetPendingResolutions(CancellationToken cancellationToken)
     {
@@ -42,7 +43,7 @@ public class ResolutionsController : ControllerBase
         return Ok(pendingTasks);
     }
     
-    [Authorize]
+    [Authorize(Roles = "Administrador,Recepcionista")]
     [HttpPatch("{id:guid}/approve")]
     public async Task<IActionResult> ApproveResolution(Guid id, CancellationToken cancellationToken)
     {
@@ -53,7 +54,7 @@ public class ResolutionsController : ControllerBase
         return NoContent(); // 204 No Content (Éxito estándar para un PATCH)
     }
 
-    [Authorize]
+    [Authorize(Roles = "Administrador,Recepcionista")]
     [HttpPatch("{id:guid}/reject")]
     public async Task<IActionResult> RejectResolution(Guid id, CancellationToken cancellationToken)
     {

@@ -1,5 +1,6 @@
 ﻿using MedCareOS.Application.Patients.Commands.CreatePatient;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MedCareOS.Api.Controllers;
@@ -15,6 +16,7 @@ public class PatientsController : ControllerBase
         _sender = sender;
     }
     
+    [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreatePatient([FromBody] CreatePatientCommand command, CancellationToken cancellationToken)
     {

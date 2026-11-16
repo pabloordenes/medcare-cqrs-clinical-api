@@ -1,12 +1,17 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using MassTransit;
+using MedCareOS.Api.Security;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using MedCareOS.Infrastructure.Configuration;
 using MedCareOS.Infrastructure.Persistence;
 using MedCareOS.Infrastructure.Persistence.Repositories;
 using MedCareOS.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -43,6 +48,27 @@ var supabaseProjectId = builder.Configuration["Supabase:ProjectId"]
 
 var authority = $"https://{supabaseProjectId}.supabase.co/auth/v1";
 
+builder.Services.Configure<OmroAuthOptions>(
+    builder.Configuration.GetSection(OmroAuthOptions.SectionName));
+
+var omroAuthOptions = builder.Configuration
+    .GetSection(OmroAuthOptions.SectionName)
+    .Get<OmroAuthOptions>() ?? new OmroAuthOptions();
+
+RsaSecurityKey? omroPublicKey = null;
+string? omroPem = !string.IsNullOrWhiteSpace(omroAuthOptions.PublicKeyContent)
+    ? omroAuthOptions.PublicKeyContent
+    : (!string.IsNullOrWhiteSpace(omroAuthOptions.PublicKeyPath) && File.Exists(omroAuthOptions.PublicKeyPath)
+        ? File.ReadAllText(omroAuthOptions.PublicKeyPath)
+        : null);
+
+if (!string.IsNullOrWhiteSpace(omroPem))
+{
+    var rsa = RSA.Create();
+    rsa.ImportFromPem(omroPem.ToCharArray());
+    omroPublicKey = new RsaSecurityKey(rsa);
+}
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -54,14 +80,54 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
-        ValidateIssuer = false, // Supabase no valida el issuer estricto por defecto
+        ValidateIssuer = true,
+        ValidIssuer = authority,
         ValidAudiences = new[] { "authenticated" },
         ValidateAudience = true,
-        ValidateLifetime = true
+        ValidateLifetime = true,
+        RoleClaimType = ClaimTypes.Role
+    };
+})
+.AddJwtBearer("OmroService", options =>
+{
+    options.MapInboundClaims = false;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = omroPublicKey,
+        ValidateIssuer = true,
+        ValidIssuer = string.IsNullOrWhiteSpace(omroAuthOptions.Issuer) ? "omro-orchestrator" : omroAuthOptions.Issuer,
+        ValidateAudience = true,
+        ValidAudience = string.IsNullOrWhiteSpace(omroAuthOptions.Audience) ? "medcareos-api" : omroAuthOptions.Audience,
+        ValidateLifetime = true,
+        RoleClaimType = "role"
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddScoped<IClaimsTransformation, UserRoleClaimsTransformation>();
+
+var omroRole = string.IsNullOrWhiteSpace(omroAuthOptions.Role) ? "omro_service" : omroAuthOptions.Role;
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("OmroService", policy =>
+    {
+        policy.AddAuthenticationSchemes("OmroService");
+        policy.RequireClaim("role", omroRole);
+    });
+
+    options.AddPolicy("Administrador", policy =>
+        policy.RequireRole(nameof(UserRole.Administrador)));
+
+    options.AddPolicy("Recepcionista", policy =>
+        policy.RequireRole(nameof(UserRole.Recepcionista), nameof(UserRole.Administrador)));
+
+    options.AddPolicy("Medico", policy =>
+        policy.RequireRole(nameof(UserRole.Medico), nameof(UserRole.Administrador)));
+
+    options.AddPolicy("Paciente", policy =>
+        policy.RequireRole(nameof(UserRole.Paciente), nameof(UserRole.Recepcionista), nameof(UserRole.Administrador)));
+});
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
                        ?? throw new InvalidOperationException("La cadena de conexión 'DefaultConnection' no existe.");
