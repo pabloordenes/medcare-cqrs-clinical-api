@@ -74,6 +74,26 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(x => x.RiskBand)
             .HasColumnName("banda_riesgo");
 
+        builder.Property(x => x.ModelRiskScore)
+            .HasColumnName("score_modelo")
+            .HasColumnType("numeric(5,4)");
+
+        builder.Property(x => x.LatestModelRiskScore)
+            .HasColumnName("latest_model_score")
+            .HasColumnType("numeric(5,4)");
+
+        builder.Property(x => x.RescoredAt)
+            .HasColumnName("rescored_at");
+
+        builder.Property(x => x.EffectiveRiskScore)
+            .HasColumnName("score_efectivo")
+            .HasColumnType("numeric(5,4)");
+
+        builder.Property(x => x.EffectiveBand)
+            .HasColumnName("effective_band")
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
         builder.Property(x => x.ScoringStatus)
             .HasColumnName("scoring_status")
             .HasConversion<string>()

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using MedCareOS.Application.Appointments.Risk;
+using MedCareOS.Application.Common.Exceptions;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
 using MedCareOS.Application.Notifications.Services;
@@ -112,6 +114,9 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             var policyRepository = scope.ServiceProvider.GetRequiredService<ITenantConfirmationPolicyRepository>();
             var notificationRepository = scope.ServiceProvider.GetRequiredService<INotificationRepository>();
             var notificationOutbox = scope.ServiceProvider.GetRequiredService<INotificationOutboxService>();
+            var riskSignalProcessor = scope.ServiceProvider.GetRequiredService<IRiskSignalProcessor>();
+            var riskSignalRepository = scope.ServiceProvider.GetRequiredService<IRiskSignalRepository>();
+            var rescoreService = scope.ServiceProvider.GetRequiredService<IAppointmentRescoreService>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var action = await actionRepository.GetByIdAsync(claimedItem.Id, cancellationToken);
@@ -198,8 +203,12 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                         block,
                         staff,
                         policy,
+                        appointmentRepository,
                         notificationRepository,
                         notificationOutbox,
+                        riskSignalProcessor,
+                        riskSignalRepository,
+                        rescoreService,
                         now,
                         cancellationToken);
                     break;
@@ -213,13 +222,22 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                         staff,
                         policy,
                         actionRepository,
+                        notificationRepository,
                         notificationOutbox,
+                        riskSignalProcessor,
                         now,
                         cancellationToken);
                     break;
 
                 case ScheduledActionKind.ConfirmationDeadline:
-                    ExecuteConfirmationDeadline(action, appointment, now);
+                    await ExecuteConfirmationDeadlineAsync(
+                        action,
+                        appointment,
+                        policy,
+                        notificationRepository,
+                        riskSignalProcessor,
+                        now,
+                        cancellationToken);
                     break;
 
                 default:
@@ -304,8 +322,12 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         ScheduleBlock block,
         Staff staff,
         TenantConfirmationPolicy policy,
+        IAppointmentRepository appointmentRepository,
         INotificationRepository notificationRepository,
         INotificationOutboxService notificationOutbox,
+        IRiskSignalProcessor riskSignalProcessor,
+        IRiskSignalRepository riskSignalRepository,
+        IAppointmentRescoreService rescoreService,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -313,6 +335,85 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             appointment.Id,
             NotificationType.Reminder,
             cancellationToken);
+
+        await EvaluateUnansweredNotificationAsync(
+            previousReminder,
+            appointment,
+            policy,
+            action,
+            now,
+            riskSignalProcessor,
+            cancellationToken);
+
+        bool rescored = false;
+        bool rescoreSkipped = false;
+        decimal? rescoredModelScore = null;
+        string? rescoreError = null;
+
+        if (policy.EnableRescoreAtReminder2)
+        {
+            try
+            {
+                var predictResult = await rescoreService.PredictForAppointmentAsync(
+                    appointment,
+                    patient,
+                    block,
+                    staff,
+                    now,
+                    cancellationToken);
+
+                rescoredModelScore = predictResult.RiskScore;
+
+                var daysOfWaiting = Math.Max(0, (block.StartTime.Date - now.UtcDateTime.Date).Days);
+                var previousAbsences = await appointmentRepository.GetNoShowCountByPatientId(patient.Id, cancellationToken);
+
+                await riskSignalProcessor.RecordAsync(
+                    new RecordRiskSignalRequest(
+                        AppointmentId: appointment.Id,
+                        Kind: RiskSignalKind.ModelRescored,
+                        Source: $"scheduled_action:{action.Kind}",
+                        IdempotencyKey: $"model_rescored:{action.Id}",
+                        CorrelationId: action.CorrelationId,
+                        OccurredAtUtc: now,
+                        WeightOverride: 0m,
+                        MetadataJson: JsonSerializer.Serialize(new
+                        {
+                            previousModelScore = appointment.ModelRiskScore,
+                            latestModelScore = predictResult.RiskScore,
+                            daysOfWaiting,
+                            previousAbsences,
+                            channel = patient.ToPredictReminderChannel()
+                        })),
+                    cancellationToken);
+
+                var allSignals = await riskSignalRepository.GetByAppointmentIdAsync(appointment.Id, cancellationToken);
+                appointment.ApplyModelRescore(predictResult.RiskScore, allSignals, policy, now);
+                rescored = true;
+            }
+            catch (Exception ex) when (IsTransientAiFailure(ex))
+            {
+                if (action.Attempts < action.MaxAttempts)
+                    throw;
+
+                rescoreSkipped = true;
+                rescoreError = ex.Message;
+                _logger.LogWarning(
+                    ex,
+                    "Re-score T-48h omitido por degradación graciosa tras agotar intentos ({Attempts}/{MaxAttempts}) para cita {AppointmentId}.",
+                    action.Attempts,
+                    action.MaxAttempts,
+                    appointment.Id);
+            }
+            catch (AiServicePermanentException ex)
+            {
+                rescoreSkipped = true;
+                rescoreError = ex.Message;
+                _logger.LogError(
+                    ex,
+                    "Re-score T-48h omitido por error permanente de IA para cita {AppointmentId}. Se continúa con Reminder 2.",
+                    appointment.Id);
+            }
+        }
 
         var targetChannel = previousReminder is not null
             ? patient.ResolveAlternateChannel(previousReminder.Channel, policy.AlternateChannelStrategy)
@@ -340,7 +441,13 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             outcome = enqueueResult.Outcome.ToString(),
             notificationId = enqueueResult.NotificationId,
             channel = enqueueResult.Channel?.ToString(),
-            previousChannel = previousReminder?.Channel.ToString()
+            previousChannel = previousReminder?.Channel.ToString(),
+            rescored,
+            rescoredModelScore,
+            rescoreSkipped,
+            rescoreError,
+            effectiveScore = appointment.EffectiveRiskScore,
+            effectiveBand = appointment.EffectiveBand?.ToString()
         }));
     }
 
@@ -352,10 +459,26 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         Staff staff,
         TenantConfirmationPolicy policy,
         IAppointmentScheduledActionRepository actionRepository,
+        INotificationRepository notificationRepository,
         INotificationOutboxService notificationOutbox,
+        IRiskSignalProcessor riskSignalProcessor,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        var previousReminder = await notificationRepository.GetLatestByAppointmentAndTypeAsync(
+            appointment.Id,
+            NotificationType.Reminder,
+            cancellationToken);
+
+        await EvaluateUnansweredNotificationAsync(
+            previousReminder,
+            appointment,
+            policy,
+            action,
+            now,
+            riskSignalProcessor,
+            cancellationToken);
+
         var allActions = await actionRepository.GetByAppointmentIdAsync(appointment.Id, cancellationToken);
         var deadlineAction = allActions
             .Where(a => a.Kind == ScheduledActionKind.ConfirmationDeadline &&
@@ -399,11 +522,29 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         }));
     }
 
-    private static void ExecuteConfirmationDeadline(
+    private static async Task ExecuteConfirmationDeadlineAsync(
         AppointmentScheduledAction action,
         Appointment appointment,
-        DateTimeOffset now)
+        TenantConfirmationPolicy policy,
+        INotificationRepository notificationRepository,
+        IRiskSignalProcessor riskSignalProcessor,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
+        var previousFinal = await notificationRepository.GetLatestByAppointmentAndTypeAsync(
+            appointment.Id,
+            NotificationType.FinalConfirmation,
+            cancellationToken);
+
+        await EvaluateUnansweredNotificationAsync(
+            previousFinal,
+            appointment,
+            policy,
+            action,
+            now,
+            riskSignalProcessor,
+            cancellationToken);
+
         appointment.MarkUnresponsive(now);
 
         action.MarkCompleted(now, JsonSerializer.Serialize(new
@@ -412,6 +553,49 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             deadlineMissedAt = appointment.DeadlineMissedAt
         }));
     }
+
+    private static async Task EvaluateUnansweredNotificationAsync(
+        Notification? previousNotification,
+        Appointment appointment,
+        TenantConfirmationPolicy policy,
+        AppointmentScheduledAction action,
+        DateTimeOffset now,
+        IRiskSignalProcessor riskSignalProcessor,
+        CancellationToken cancellationToken)
+    {
+        if (previousNotification is null)
+            return;
+
+        bool isConsideredDelivered =
+            previousNotification.Status is NotificationStatus.Delivered or NotificationStatus.Read ||
+            (policy.CountSentAsDeliveredForUnanswered && previousNotification.Status == NotificationStatus.Sent);
+
+        if (!isConsideredDelivered)
+            return;
+
+        if (appointment.IsPatientConfirmed || appointment.ConfirmationState == ConfirmationState.DeclinedByPatient)
+            return;
+
+        await riskSignalProcessor.RecordAsync(
+            new RecordRiskSignalRequest(
+                AppointmentId: appointment.Id,
+                Kind: RiskSignalKind.ReminderUnanswered,
+                Source: $"scheduled_action:{action.Kind}",
+                IdempotencyKey: $"reminder_unanswered:{previousNotification.Id}",
+                CorrelationId: action.CorrelationId,
+                OccurredAtUtc: now,
+                MetadataJson: JsonSerializer.Serialize(new
+                {
+                    notificationId = previousNotification.Id,
+                    notificationType = previousNotification.Type.ToString(),
+                    notificationStatus = previousNotification.Status.ToString(),
+                    channel = previousNotification.Channel.ToString()
+                })),
+            cancellationToken);
+    }
+
+    private static bool IsTransientAiFailure(Exception ex) =>
+        ex is AiServiceTransientException or HttpRequestException;
 
     private async Task<ItemOutcome> TryScheduleRetryAsync(
         AppointmentScheduledAction claimedItem,

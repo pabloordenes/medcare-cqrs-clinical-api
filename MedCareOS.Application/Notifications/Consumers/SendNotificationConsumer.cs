@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MassTransit;
+using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Common.Exceptions;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
@@ -21,6 +22,7 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
     private readonly INotificationChannelResolver _channelResolver;
     private readonly INotificationTemplateRenderer _templateRenderer;
     private readonly IPatientActionTokenService _tokenService;
+    private readonly IRiskSignalProcessor _riskSignalProcessor;
     private readonly IUnitOfWork _unitOfWork;
     private readonly NotificationOptions _options;
     private readonly ILogger<SendNotificationConsumer> _logger;
@@ -32,6 +34,7 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         INotificationChannelResolver channelResolver,
         INotificationTemplateRenderer templateRenderer,
         IPatientActionTokenService tokenService,
+        IRiskSignalProcessor riskSignalProcessor,
         IUnitOfWork unitOfWork,
         IOptions<NotificationOptions> options,
         ILogger<SendNotificationConsumer> logger)
@@ -42,6 +45,7 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         _channelResolver = channelResolver;
         _templateRenderer = templateRenderer;
         _tokenService = tokenService;
+        _riskSignalProcessor = riskSignalProcessor;
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _logger = logger;
@@ -104,7 +108,9 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
             }
             else
             {
-                notification.Cancel("Sin canal de envío válido tras descartar WhatsApp.", utcNow);
+                const string noChannelError = "Sin canal de envío válido tras descartar WhatsApp.";
+                notification.Cancel(noChannelError, utcNow);
+                await RecordDeliveryFailureSignalAsync(notification, "channel_resolver", noChannelError, utcNow, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 return;
             }
@@ -112,7 +118,9 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
 
         if (notification.Channel == NotificationChannel.Email && !HasValidEmail(patient))
         {
-            notification.RecordAttemptFailure("Paciente sin dirección de email válida.", isTerminal: true, utcNow);
+            const string missingEmailError = "Paciente sin dirección de email válida.";
+            notification.RecordAttemptFailure(missingEmailError, isTerminal: true, utcNow);
+            await RecordDeliveryFailureSignalAsync(notification, "channel_resolver", missingEmailError, utcNow, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             throw new NotificationPermanentDeliveryException($"Paciente {patient.Id} sin email válido.");
         }
@@ -226,9 +234,41 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         }
 
         // Fallo permanente sin fallback disponible
-        notification.RecordAttemptFailure(errorText, isTerminal: true, DateTimeOffset.UtcNow);
+        var terminalNow = DateTimeOffset.UtcNow;
+        notification.RecordAttemptFailure(errorText, isTerminal: true, terminalNow);
+        await RecordDeliveryFailureSignalAsync(notification, result.ProviderName, errorText, terminalNow, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         throw new NotificationPermanentDeliveryException(errorText, result.HttpStatusCode, result.ErrorCode);
+    }
+
+    private async Task RecordDeliveryFailureSignalAsync(
+        Notification notification,
+        string providerName,
+        string errorText,
+        DateTimeOffset occurredAt,
+        CancellationToken ct)
+    {
+        if (!notification.AppointmentId.HasValue)
+            return;
+
+        await _riskSignalProcessor.RecordAsync(
+            new RecordRiskSignalRequest(
+                AppointmentId: notification.AppointmentId.Value,
+                Kind: RiskSignalKind.DeliveryFailed,
+                Source: "notification_consumer",
+                IdempotencyKey: $"delivery_failed:{notification.Id}",
+                CorrelationId: notification.CorrelationId,
+                OccurredAtUtc: occurredAt,
+                MetadataJson: JsonSerializer.Serialize(new
+                {
+                    notificationId = notification.Id,
+                    channel = notification.Channel.ToString(),
+                    provider = providerName,
+                    error = errorText
+                }),
+                CreateFailedDeliveryReceptionTask: true,
+                ReceptionTaskReason: $"Fallo entrega {notification.Channel} ({providerName}): {errorText}"),
+            ct);
     }
 
     private async Task<(Dictionary<string, string>? ActionUrls, string? RescheduleTokenSuffix)> BuildActionUrlsIfNeededAsync(

@@ -1,6 +1,9 @@
+using System.Text.Json;
+using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Application.Patients.Commands.RecordPatientOptOut;
 using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -12,17 +15,20 @@ public class ProcessProviderDeliveryStatusCommandHandler : IRequestHandler<Proce
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly INotificationRepository _notificationRepository;
+    private readonly IRiskSignalProcessor _riskSignalProcessor;
     private readonly ISender _sender;
     private readonly ILogger<ProcessProviderDeliveryStatusCommandHandler> _logger;
 
     public ProcessProviderDeliveryStatusCommandHandler(
         IApplicationDbContext dbContext,
         INotificationRepository notificationRepository,
+        IRiskSignalProcessor riskSignalProcessor,
         ISender sender,
         ILogger<ProcessProviderDeliveryStatusCommandHandler> logger)
     {
         _dbContext = dbContext;
         _notificationRepository = notificationRepository;
+        _riskSignalProcessor = riskSignalProcessor;
         _sender = sender;
         _logger = logger;
     }
@@ -59,6 +65,33 @@ public class ProcessProviderDeliveryStatusCommandHandler : IRequestHandler<Proce
         else
         {
             notification.ApplyDeliveryStatus(request.Status, request.EventTimestampUtc, request.Error);
+
+            if (notification.AppointmentId.HasValue && request.Status == NotificationStatus.Failed)
+            {
+                var errorSummary = string.IsNullOrWhiteSpace(request.Error)
+                    ? $"Entrega fallida reportada por {request.Provider}."
+                    : request.Error.Trim();
+
+                await _riskSignalProcessor.RecordAsync(
+                    new RecordRiskSignalRequest(
+                        AppointmentId: notification.AppointmentId.Value,
+                        Kind: RiskSignalKind.DeliveryFailed,
+                        Source: $"webhook:{request.Provider.ToLowerInvariant()}",
+                        IdempotencyKey: $"delivery_failed:{notification.Id}",
+                        CorrelationId: notification.CorrelationId,
+                        OccurredAtUtc: request.EventTimestampUtc,
+                        MetadataJson: JsonSerializer.Serialize(new
+                        {
+                            notificationId = notification.Id,
+                            provider = request.Provider,
+                            eventId = request.EventId,
+                            channel = notification.Channel.ToString(),
+                            error = errorSummary
+                        }),
+                        CreateFailedDeliveryReceptionTask: true,
+                        ReceptionTaskReason: $"Fallo entrega {notification.Channel} vía {request.Provider}: {errorSummary}"),
+                    cancellationToken);
+            }
         }
 
         _dbContext.ProcessedWebhookKeys.Add(

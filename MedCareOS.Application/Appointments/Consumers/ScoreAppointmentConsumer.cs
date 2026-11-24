@@ -20,6 +20,8 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
     private readonly IPatientRepository _patientRepository;
     private readonly IScheduleBlockRepository _scheduleBlockRepository;
     private readonly IStaffRepository _staffRepository;
+    private readonly ITenantConfirmationPolicyRepository _policyRepository;
+    private readonly IRiskSignalRepository _riskSignalRepository;
     private readonly IAiClinicalService _aiClinicalService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ScoringOptions _scoringOptions;
@@ -31,6 +33,8 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
         IPatientRepository patientRepository,
         IScheduleBlockRepository scheduleBlockRepository,
         IStaffRepository staffRepository,
+        ITenantConfirmationPolicyRepository policyRepository,
+        IRiskSignalRepository riskSignalRepository,
         IAiClinicalService aiClinicalService,
         IUnitOfWork unitOfWork,
         IOptions<ScoringOptions> scoringOptions,
@@ -41,6 +45,8 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
         _patientRepository = patientRepository;
         _scheduleBlockRepository = scheduleBlockRepository;
         _staffRepository = staffRepository;
+        _policyRepository = policyRepository;
+        _riskSignalRepository = riskSignalRepository;
         _aiClinicalService = aiClinicalService;
         _unitOfWork = unitOfWork;
         _scoringOptions = scoringOptions.Value;
@@ -117,7 +123,19 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
 
         if (predictResult is not null)
         {
-            appointment.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
+            var scoreUtc = DateTimeOffset.UtcNow;
+            var policy = await _policyRepository.GetOrDefaultAsync(appointment.TenantId, cancellationToken);
+            appointment.RecordInitialModelScore(
+                predictResult.RiskScore,
+                predictResult.RiskBand,
+                policy.GetHysteresisThresholds(),
+                scoreUtc);
+
+            var existingSignals = await _riskSignalRepository.GetByAppointmentIdAsync(appointment.Id, cancellationToken);
+            if (existingSignals.Count > 0)
+            {
+                appointment.RecalculateEffectiveRisk(existingSignals, policy, scoreUtc);
+            }
         }
 
         if (nlpError is not null || predictError is not null)

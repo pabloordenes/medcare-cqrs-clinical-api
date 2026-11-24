@@ -1,5 +1,6 @@
 ﻿using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Services;
 using MedCareOS.Domain.ValueObjects;
 
 namespace MedCareOS.Domain.Entities;
@@ -22,6 +23,11 @@ public class Appointment
     public string? NlpSummary { get; private set; }
     public decimal? NoShowRiskScore { get; private set; }
     public string? RiskBand { get; private set; }
+    public decimal? ModelRiskScore { get; private set; }
+    public decimal? LatestModelRiskScore { get; private set; }
+    public DateTimeOffset? RescoredAt { get; private set; }
+    public decimal? EffectiveRiskScore { get; private set; }
+    public RiskBandLevel? EffectiveBand { get; private set; }
     public ScoringStatus ScoringStatus { get; private set; }
     public NlpStatus NlpStatus { get; private set; }
     public int ScoringAttempts { get; private set; }
@@ -32,6 +38,8 @@ public class Appointment
     public bool? ActualAttendance { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    public decimal? CurrentBaseModelScore => LatestModelRiskScore ?? ModelRiskScore ?? NoShowRiskScore;
 
     public bool IsPatientConfirmed =>
         ConfirmationState is ConfirmationState.ConfirmedEarly or ConfirmationState.FinalConfirmed;
@@ -372,6 +380,12 @@ public class Appointment
             throw new ArgumentException("La banda de riesgo no puede ser vacía ni 'Pendiente'.", nameof(band));
 
         var utcNow = DateTimeOffset.UtcNow;
+        ModelRiskScore ??= noShowRiskScore;
+        EffectiveRiskScore = noShowRiskScore;
+        EffectiveBand = RiskBandLevelExtensions.TryParseLabel(band, out var parsedBand)
+            ? parsedBand
+            : RiskBandEvaluator.EvaluateInitial(noShowRiskScore, HysteresisThresholds.Default);
+
         NoShowRiskScore = noShowRiskScore;
         RiskBand = band.Trim();
         ScoringStatus = ScoringStatus.Scored;
@@ -382,6 +396,101 @@ public class Appointment
             LastScoringError = null;
         }
         UpdatedAt = utcNow;
+    }
+
+    public void RecordInitialModelScore(
+        decimal modelScore,
+        string rawModelBand,
+        HysteresisThresholds thresholds,
+        DateTimeOffset utcNow)
+    {
+        if (Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+            throw new InvalidOperationException("No se puede actualizar el riesgo en una cita cancelada o con inasistencia.");
+
+        if (modelScore is < 0m or > 1m)
+            throw new ArgumentOutOfRangeException(nameof(modelScore), "El score de riesgo debe estar entre 0 y 1.");
+
+        if (string.IsNullOrWhiteSpace(rawModelBand) || rawModelBand.Trim().Equals("Pendiente", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("La banda de riesgo no puede ser vacía ni 'Pendiente'.", nameof(rawModelBand));
+
+        ArgumentNullException.ThrowIfNull(thresholds);
+
+        var normalizedScore = Math.Round(modelScore, 4, MidpointRounding.AwayFromZero);
+        ModelRiskScore ??= normalizedScore;
+
+        var initialBand = RiskBandEvaluator.EvaluateInitial(normalizedScore, thresholds);
+        EffectiveRiskScore = normalizedScore;
+        EffectiveBand = initialBand;
+        NoShowRiskScore = normalizedScore;
+        RiskBand = initialBand.ToLabel();
+
+        ScoringStatus = ScoringStatus.Scored;
+        ScoredAt ??= utcNow;
+        if (NlpStatus != NlpStatus.Failed)
+        {
+            NextScoringRetryAt = null;
+            LastScoringError = null;
+        }
+        UpdatedAt = utcNow;
+    }
+
+    public (RiskBandLevel? PreviousBand, RiskBandLevel? NewBand) ApplyModelRescore(
+        decimal rescoredModelScore,
+        IEnumerable<RiskSignal> allSignals,
+        TenantConfirmationPolicy policy,
+        DateTimeOffset utcNow)
+    {
+        if (Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished)
+            throw new InvalidOperationException("No se puede re-evaluar el riesgo en una cita inactiva o finalizada.");
+
+        if (rescoredModelScore is < 0m or > 1m)
+            throw new ArgumentOutOfRangeException(nameof(rescoredModelScore), "El score de riesgo debe estar entre 0 y 1.");
+
+        ArgumentNullException.ThrowIfNull(allSignals);
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var normalized = Math.Round(rescoredModelScore, 4, MidpointRounding.AwayFromZero);
+        ModelRiskScore ??= normalized; // score_modelo T0 es inmutable si ya existía
+        LatestModelRiskScore = normalized;
+        RescoredAt = utcNow;
+
+        ScoringStatus = ScoringStatus.Scored;
+        ScoredAt ??= utcNow;
+        if (NlpStatus != NlpStatus.Failed)
+        {
+            NextScoringRetryAt = null;
+            LastScoringError = null;
+        }
+
+        return RecalculateEffectiveRisk(allSignals, policy, utcNow);
+    }
+
+    public (RiskBandLevel? PreviousBand, RiskBandLevel? NewBand) RecalculateEffectiveRisk(
+        IEnumerable<RiskSignal> allSignals,
+        TenantConfirmationPolicy policy,
+        DateTimeOffset utcNow)
+    {
+        ArgumentNullException.ThrowIfNull(allSignals);
+        ArgumentNullException.ThrowIfNull(policy);
+
+        if (!CurrentBaseModelScore.HasValue)
+            return (EffectiveBand, EffectiveBand);
+
+        var effective = RiskScoreCalculator.ComputeEffectiveScore(
+            CurrentBaseModelScore.Value,
+            allSignals,
+            policy.MaxReminderUnansweredCumulative);
+
+        var previousBand = EffectiveBand;
+        var newBand = RiskBandEvaluator.Evaluate(effective, previousBand, policy.GetHysteresisThresholds());
+
+        EffectiveRiskScore = effective;
+        EffectiveBand = newBand;
+        NoShowRiskScore = effective;
+        RiskBand = newBand.ToLabel();
+        UpdatedAt = utcNow;
+
+        return (previousBand, newBand);
     }
 
     public void ApplyNlpAnalysis(string summary, string? processedSymptoms)

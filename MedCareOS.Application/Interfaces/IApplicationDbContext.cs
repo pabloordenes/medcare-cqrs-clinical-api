@@ -8,6 +8,7 @@ public interface IApplicationDbContext
     DbSet<ScheduleBlock> ScheduleBlocks { get; }
     DbSet<Appointment> Appointments { get; }
     DbSet<AppointmentScheduledAction> AppointmentScheduledActions { get; }
+    DbSet<RiskSignal> RiskSignals { get; }
     DbSet<TenantConfirmationPolicy> TenantConfirmationPolicies { get; }
     DbSet<Patient> Patients { get; }
     DbSet<Staff> Staffs { get; }

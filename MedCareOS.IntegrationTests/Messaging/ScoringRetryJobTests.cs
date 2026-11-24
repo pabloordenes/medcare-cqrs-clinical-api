@@ -230,6 +230,8 @@ public class ScoringRetryJobTests
             services.AddScoped<IPatientRepository, PatientRepository>();
             services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
             services.AddScoped<IStaffRepository, StaffRepository>();
+            services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
+            services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IMessageInboxStore, EfMessageInboxStore>();
             services.AddSingleton(aiService);

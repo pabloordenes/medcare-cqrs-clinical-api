@@ -3,6 +3,7 @@ using FluentAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using MedCareOS.Api.BackgroundServices;
+using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Common.Exceptions;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Common.Interfaces.Notifications;
@@ -439,6 +440,10 @@ public class SendNotificationOutboxAndConsumerTests
             services.AddScoped<IPatientRepository, PatientRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();
+            services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
+            services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
+            services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+            services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IMessageInboxStore, EfMessageInboxStore>();
 
