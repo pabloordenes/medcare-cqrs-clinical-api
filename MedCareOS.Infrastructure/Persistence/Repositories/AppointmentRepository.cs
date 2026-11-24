@@ -46,4 +46,33 @@ public class AppointmentRepository : IAppointmentRepository
             select app
         ).ToListAsync(cancellationToken);
     }
+
+    public async Task<List<Appointment>> GetAppointmentsPendingScoringRetryAsync(
+        DateTimeOffset utcNow,
+        TimeSpan pendingStaleAge,
+        int maxAttempts,
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        var staleCutoff = utcNow.Subtract(pendingStaleAge);
+        var utcNowDateTime = utcNow.UtcDateTime;
+
+        return await (
+            from app in _dbContext.Appointments
+            join block in _dbContext.ScheduleBlocks on app.ScheduleBlockId equals block.Id
+            where (app.Status == AppointmentStatus.Scheduled || app.Status == AppointmentStatus.Confirmed)
+                  && block.StartTime > utcNowDateTime
+                  && (
+                      ((app.ScoringStatus == ScoringStatus.Pending || app.NlpStatus == NlpStatus.Pending)
+                          && app.CreatedAt <= staleCutoff
+                          && (app.NextScoringRetryAt == null || app.NextScoringRetryAt <= utcNow))
+                      ||
+                      ((app.ScoringStatus == ScoringStatus.Failed || app.NlpStatus == NlpStatus.Failed)
+                          && app.ScoringAttempts < maxAttempts
+                          && (app.NextScoringRetryAt == null || app.NextScoringRetryAt <= utcNow))
+                  )
+            orderby app.NextScoringRetryAt ?? app.CreatedAt
+            select app
+        ).Take(batchSize).ToListAsync(cancellationToken);
+    }
 }

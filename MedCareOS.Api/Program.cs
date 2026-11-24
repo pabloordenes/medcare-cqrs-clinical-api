@@ -33,6 +33,8 @@ builder.Services.AddMediatR(cfg =>
 
 builder.Services.Configure<ScoringOptions>(
     builder.Configuration.GetSection(ScoringOptions.SectionName));
+builder.Services.Configure<ScoringRetryOptions>(
+    builder.Configuration.GetSection(ScoringRetryOptions.SectionName));
 builder.Services.Configure<RabbitMqMessagingOptions>(
     builder.Configuration.GetSection(RabbitMqMessagingOptions.SectionName));
 
@@ -238,6 +240,7 @@ builder.Services.Configure<AiServiceOptions>(
 
 builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
 builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
+builder.Services.AddHostedService<ScoringRetryBackgroundService>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {

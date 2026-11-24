@@ -1,4 +1,5 @@
 ﻿using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -41,6 +42,35 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(x => x.RiskBand)
             .HasColumnName("banda_riesgo");
 
+        builder.Property(x => x.ScoringStatus)
+            .HasColumnName("scoring_status")
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(ScoringStatus.Pending)
+            .IsRequired();
+
+        builder.Property(x => x.NlpStatus)
+            .HasColumnName("nlp_status")
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(NlpStatus.Pending)
+            .IsRequired();
+
+        builder.Property(x => x.ScoringAttempts)
+            .HasColumnName("scoring_attempts")
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(x => x.NextScoringRetryAt)
+            .HasColumnName("next_scoring_retry_at");
+
+        builder.Property(x => x.LastScoringError)
+            .HasColumnName("last_scoring_error")
+            .HasMaxLength(500);
+
+        builder.Property(x => x.ScoredAt)
+            .HasColumnName("scored_at");
+
         builder.Property(x => x.SchedulingSource)
             .HasColumnName("fuente_agendamiento");
         
@@ -62,5 +92,9 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
             .HasDatabaseName("IX_citas_schedule_block_id")
             .IsUnique()
             .HasFilter("estado <> 'Cancelled'");
+
+        builder.HasIndex(x => new { x.ScoringStatus, x.NlpStatus, x.NextScoringRetryAt })
+            .HasDatabaseName("IX_citas_scoring_retry")
+            .HasFilter("estado IN ('Scheduled', 'Confirmed') AND (scoring_status <> 'Scored' OR nlp_status IN ('Pending', 'Failed'))");
     }
 }

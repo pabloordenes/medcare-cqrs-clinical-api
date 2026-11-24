@@ -28,6 +28,8 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
                 app.Id,
                 app.Status,
                 app.ActualAttendance,
+                app.ScoringStatus,
+                app.NlpStatus,
                 app.NoShowRiskScore,
                 app.RiskBand,
                 app.CreatedAt,
@@ -36,7 +38,9 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
                 DoctorName = staff.FirstName + " " + staff.LastName,
                 PatientName = patient.FirstName + " " + patient.LastName,
                 PatientRut = patient.Rut,
-                FactorPrincipal = app.NlpSummary ?? "Evaluación clínica"
+                FactorPrincipal = app.NlpStatus == NlpStatus.Completed && !string.IsNullOrWhiteSpace(app.NlpSummary)
+                    ? app.NlpSummary
+                    : "Evaluación clínica pendiente"
             }
         ).ToListAsync(cancellationToken);
 
@@ -116,10 +120,12 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
 
         // E. Alertas de Riesgo (La tabla de acción predictiva)
         var alertasRiesgo = citasRaw
-            .Where(c => (c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed) 
-                     && c.StartTime > DateTime.UtcNow 
-                     && (c.RiskBand == RiskThresholds.HighRiskBand || c.NoShowRiskScore >= RiskThresholds.ModerateRiskMin))
-            .OrderByDescending(c => c.NoShowRiskScore)
+            .Where(c => (c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed)
+                     && c.StartTime > DateTime.UtcNow
+                     && c.ScoringStatus == ScoringStatus.Scored
+                     && c.NoShowRiskScore.HasValue
+                     && (c.RiskBand == RiskThresholds.HighRiskBand || c.NoShowRiskScore.Value >= RiskThresholds.ModerateRiskMin))
+            .OrderByDescending(c => c.NoShowRiskScore!.Value)
             .Take(10) // Top 10 pacientes con más riesgo
             .Select(c => new CitaRiesgoDto(
                 c.Id,
@@ -129,7 +135,7 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
                 c.DoctorName,
                 c.StartTime.ToString("yyyy-MM-dd"),
                 c.StartTime.ToString("HH:mm"),
-                Math.Round(c.NoShowRiskScore * 100, 1),
+                Math.Round(c.NoShowRiskScore!.Value * 100, 1),
                 c.RiskBand ?? "ALTO",
                 c.FactorPrincipal,
                 "Pendiente"
