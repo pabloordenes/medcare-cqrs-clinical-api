@@ -22,6 +22,7 @@ using MedCareOS.Infrastructure.Messaging.Consumers;
 using MedCareOS.Infrastructure.Messaging.Observers;
 using MedCareOS.Infrastructure.Notifications.Channels;
 using MedCareOS.Infrastructure.Notifications.Security;
+using MedCareOS.Infrastructure.Notifications.Webhooks;
 using MedCareOS.Infrastructure.Persistence;
 using MedCareOS.Infrastructure.Persistence.Repositories;
 using MedCareOS.Infrastructure.Services;
@@ -278,6 +279,8 @@ builder.Services.AddScoped<INotificationChannelResolver, NotificationChannelReso
 builder.Services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
 builder.Services.AddScoped<INotificationOutboxService, NotificationOutboxService>();
 builder.Services.AddScoped<IPatientActionTokenService, PatientActionTokenService>();
+builder.Services.AddScoped<IWebhookSignatureVerifier, MetaWebhookSignatureVerifier>();
+builder.Services.AddScoped<IWebhookSignatureVerifier, ResendWebhookSignatureVerifier>();
 
 builder.Services.AddRateLimiter(options =>
 {

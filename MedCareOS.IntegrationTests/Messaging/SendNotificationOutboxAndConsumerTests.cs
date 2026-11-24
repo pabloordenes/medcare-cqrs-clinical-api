@@ -41,35 +41,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: true,
             email: "ana@test.cl");
 
-        Guid notificationId;
-        using (var scope = host.Provider.CreateScope())
-        {
-            var outbox = scope.ServiceProvider.GetRequiredService<INotificationOutboxService>();
-            var patientRepo = scope.ServiceProvider.GetRequiredService<IPatientRepository>();
-            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var patient = (await patientRepo.GetPatientByIdAsync(patientId))!;
-
-            var res = await outbox.EnqueueAsync(new EnqueueNotificationRequest(
-                RiskThresholds.DefaultTenantId,
-                appointmentId,
-                patient,
-                NotificationType.Reminder,
-                DefaultNotificationTemplateCatalog.Keys.Reminder,
-                "es-CL",
-                DateTimeOffset.UtcNow,
-                new Dictionary<string, string>
-                {
-                    ["patientFirstName"] = patient.FirstName,
-                    ["clinicName"] = "Clínica MedCare",
-                    ["appointmentDate"] = "26/11/2026",
-                    ["appointmentTime"] = "10:00 hrs",
-                    ["specialtyDisplay"] = "Medicina General"
-                },
-                Guid.NewGuid()));
-
-            notificationId = res.NotificationId!.Value;
-            await uow.SaveChangesAsync();
-        }
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.WhatsApp);
 
         await host.Harness.Bus.Publish(new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow));
 
@@ -110,7 +82,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: true,
             email: "fallback@test.cl");
 
-        var notificationId = await host.EnqueueReminderAsync(appointmentId, patientId);
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.WhatsApp);
         await host.Harness.Bus.Publish(new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow));
 
         var consumerHarness = host.Harness.GetConsumerHarness<SendNotificationConsumer>();
@@ -141,7 +113,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: true,
             email: "optin_revoked@test.cl");
 
-        var notificationId = await host.EnqueueReminderAsync(appointmentId, patientId);
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.WhatsApp);
 
         // Revoke WhatsApp opt-in after enqueue but before dispatch (stays Email-reachable)
         using (var scope = host.Provider.CreateScope())
@@ -176,7 +148,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: false,
             email: "optout@test.cl");
 
-        var notificationId = await host.EnqueueReminderAsync(appointmentId, patientId);
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.Email);
 
         using (var scope = host.Provider.CreateScope())
         {
@@ -221,7 +193,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: true,
             email: "transient_fallback@test.cl");
 
-        var notificationId = await host.EnqueueReminderAsync(appointmentId, patientId);
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.WhatsApp);
         await host.Harness.Bus.Publish(new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow));
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -256,7 +228,7 @@ public class SendNotificationOutboxAndConsumerTests
             whatsAppOptIn: false,
             email: "dlq@test.cl");
 
-        var notificationId = await host.EnqueueReminderAsync(appointmentId, patientId);
+        var notificationId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.Email);
         await host.Harness.Bus.Publish(new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow));
 
         var faulted = await host.Harness.Consumed.SelectAsync<SendNotificationRequested>(
@@ -316,20 +288,29 @@ public class SendNotificationOutboxAndConsumerTests
         }
 
         // Duplicate MessageId delivery through MassTransit inbox filter
+        var pendingForInboxTestId = await host.SeedPendingReminderInDbAsync(appointmentId, patientId, NotificationChannel.Email);
         var messageId = Guid.NewGuid();
         await host.Harness.Bus.Publish(
-            new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow),
+            new SendNotificationRequested(pendingForInboxTestId, Guid.NewGuid(), DateTimeOffset.UtcNow),
             p => p.MessageId = messageId);
         await host.Harness.Bus.Publish(
-            new SendNotificationRequested(notificationId, Guid.NewGuid(), DateTimeOffset.UtcNow),
+            new SendNotificationRequested(pendingForInboxTestId, Guid.NewGuid(), DateTimeOffset.UtcNow),
             p => p.MessageId = messageId);
 
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (DateTime.UtcNow < deadline && host.Store.SentMessages.Count == 0)
+        while (DateTime.UtcNow < deadline &&
+               !host.Store.SentMessages.Any(m => m.NotificationId == pendingForInboxTestId))
+        {
             await Task.Delay(30);
+        }
 
         await Task.Delay(150);
-        host.Store.SentMessages.Count(m => m.NotificationId == notificationId).Should().Be(1);
+        host.Store.SentMessages.Count(m => m.NotificationId == pendingForInboxTestId).Should().Be(1);
+
+        using var verifyScope = host.Provider.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboxRow = await verifyDb.ProcessedMessages.AsNoTracking().SingleAsync(m => m.MessageId == messageId);
+        inboxRow.Status.Should().Be(ProcessedMessage.StatusCompleted);
     }
 
     [Fact]
@@ -560,34 +541,39 @@ public class SendNotificationOutboxAndConsumerTests
             return (appointment.Id, patient.Id);
         }
 
-        public async Task<Guid> EnqueueReminderAsync(Guid appointmentId, Guid patientId)
+        public async Task<Guid> SeedPendingReminderInDbAsync(Guid appointmentId, Guid patientId, NotificationChannel channel)
         {
             using var scope = Provider.CreateScope();
-            var outbox = scope.ServiceProvider.GetRequiredService<INotificationOutboxService>();
-            var patientRepo = scope.ServiceProvider.GetRequiredService<IPatientRepository>();
-            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var patient = (await patientRepo.GetPatientByIdAsync(patientId))!;
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var patient = await db.Patients.AsNoTracking().FirstAsync(p => p.Id == patientId);
+            var now = DateTimeOffset.UtcNow;
 
-            var res = await outbox.EnqueueAsync(new EnqueueNotificationRequest(
+            var paramsJson = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["patientFirstName"] = patient.FirstName,
+                ["clinicName"] = "Clínica MedCare",
+                ["appointmentDate"] = "26/11/2026",
+                ["appointmentTime"] = "10:00 hrs",
+                ["specialtyDisplay"] = "Medicina General"
+            });
+
+            var notification = Notification.Create(
                 RiskThresholds.DefaultTenantId,
                 appointmentId,
-                patient,
+                patientId,
                 NotificationType.Reminder,
+                channel,
                 DefaultNotificationTemplateCatalog.Keys.Reminder,
+                1,
                 "es-CL",
-                DateTimeOffset.UtcNow,
-                new Dictionary<string, string>
-                {
-                    ["patientFirstName"] = patient.FirstName,
-                    ["clinicName"] = "Clínica MedCare",
-                    ["appointmentDate"] = "26/11/2026",
-                    ["appointmentTime"] = "10:00 hrs",
-                    ["specialtyDisplay"] = "Medicina General"
-                },
-                Guid.NewGuid()));
+                paramsJson,
+                now,
+                Guid.NewGuid(),
+                now);
 
-            await uow.SaveChangesAsync();
-            return res.NotificationId!.Value;
+            db.Notifications.Add(notification);
+            await db.SaveChangesAsync();
+            return notification.Id;
         }
 
         public async ValueTask DisposeAsync()
