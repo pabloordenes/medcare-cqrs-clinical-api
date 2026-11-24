@@ -1,3 +1,5 @@
+using System.Text.Json;
+using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Application.Notifications.Commands.ProcessPatientReply;
 using MedCareOS.Application.Notifications.Services;
@@ -17,6 +19,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
     private readonly IPatientRepository _patientRepository;
     private readonly IAppointmentRepository _appointmentRepository;
     private readonly INotificationRepository _notificationRepository;
+    private readonly IRiskSignalProcessor _riskSignalProcessor;
     private readonly ISender _sender;
     private readonly ILogger<ProcessWhatsAppInboundMessageCommandHandler> _logger;
 
@@ -25,6 +28,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
         IPatientRepository patientRepository,
         IAppointmentRepository appointmentRepository,
         INotificationRepository notificationRepository,
+        IRiskSignalProcessor riskSignalProcessor,
         ISender sender,
         ILogger<ProcessWhatsAppInboundMessageCommandHandler> logger)
     {
@@ -32,6 +36,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
         _patientRepository = patientRepository;
         _appointmentRepository = appointmentRepository;
         _notificationRepository = notificationRepository;
+        _riskSignalProcessor = riskSignalProcessor;
         _sender = sender;
         _logger = logger;
     }
@@ -79,10 +84,31 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
         var parsed = PatientReplyKeywordParser.Parse(request.ButtonPayload, request.TextBody);
         if (parsed.Intent == PatientReplyIntent.Unknown)
         {
+            var latestForInquiry = await _notificationRepository.GetLatestActionableByPatientAsync(patient.Id, cancellationToken);
+            if (latestForInquiry?.AppointmentId is Guid inquiryAppointmentId)
+            {
+                await _riskSignalProcessor.RecordAsync(
+                    new RecordRiskSignalRequest(
+                        AppointmentId: inquiryAppointmentId,
+                        Kind: RiskSignalKind.RepliedWithoutConfirmation,
+                        Source: "whatsapp_inbound",
+                        IdempotencyKey: $"replied_neutral:{request.InboundMessageId.Trim()}",
+                        CorrelationId: latestForInquiry.CorrelationId,
+                        OccurredAtUtc: request.ReceivedAtUtc,
+                        MetadataJson: JsonSerializer.Serialize(new
+                        {
+                            channel = NotificationChannel.WhatsApp.ToString(),
+                            inboundMessageId = request.InboundMessageId.Trim(),
+                            notificationId = latestForInquiry.Id
+                        })),
+                    cancellationToken);
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             _logger.LogInformation(
-                "Respuesta WhatsApp no reconocida para paciente {PatientId}. Texto normalizado={Keyword}",
-                patient.Id,
-                parsed.NormalizedKeyword);
+                "Respuesta WhatsApp no reconocida para paciente {PatientId}. Señal neutra registrada si había cita accionable.",
+                patient.Id);
             return;
         }
 

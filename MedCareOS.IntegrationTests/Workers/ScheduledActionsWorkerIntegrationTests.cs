@@ -4,6 +4,7 @@ using MassTransit.Testing;
 using MedCareOS.Application.Appointments.Commands.CancelAppointment;
 using MedCareOS.Application.Appointments.Commands.CreateAppointment;
 using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Appointments.Workers;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Common.Interfaces.Notifications;
@@ -375,6 +376,11 @@ public class ScheduledActionsWorkerIntegrationTests
             services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();
             services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
             services.AddScoped<IAppointmentScheduledActionRepository, AppointmentScheduledActionRepository>();
+            services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
+            services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+            services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
+            services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
+            services.AddScoped<IAiClinicalService, StubWorkerAiClinicalService>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IMessageInboxStore, EfMessageInboxStore>();
 
@@ -631,5 +637,14 @@ public class ScheduledActionsWorkerIntegrationTests
 
             return result;
         }
+    }
+
+    private sealed class StubWorkerAiClinicalService : IAiClinicalService
+    {
+        public Task<NlpSummaryResponseDto> GetNlpSummaryAsync(Guid appointmentId, string symptomsRaw, CancellationToken ctx)
+            => Task.FromResult(new NlpSummaryResponseDto(symptomsRaw, [], "baja"));
+
+        public Task<PredictResponseDto> PredictNoShowRiskAsync(PredictRequestDto request, CancellationToken ctx)
+            => Task.FromResult(new PredictResponseDto(request.AppointmentId, 0.30m, "Bajo", "asiste"));
     }
 }

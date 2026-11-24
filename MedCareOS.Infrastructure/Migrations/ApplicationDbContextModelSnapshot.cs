@@ -267,6 +267,15 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deadline_missed_at");
 
+                    b.Property<string>("EffectiveBand")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("effective_band");
+
+                    b.Property<decimal?>("EffectiveRiskScore")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("score_efectivo");
+
                     b.Property<DateTimeOffset?>("FinalConfirmationRequestedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("final_confirmation_requested_at");
@@ -275,6 +284,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("last_scoring_error");
+
+                    b.Property<decimal?>("LatestModelRiskScore")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("latest_model_score");
+
+                    b.Property<decimal?>("ModelRiskScore")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("score_modelo");
 
                     b.Property<DateTimeOffset?>("NextScoringRetryAt")
                         .HasColumnType("timestamp with time zone")
@@ -309,6 +326,10 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<string>("ProcessedSymptoms")
                         .HasColumnType("jsonb")
                         .HasColumnName("sintomas_procesados");
+
+                    b.Property<DateTimeOffset?>("RescoredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rescored_at");
 
                     b.Property<string>("RiskBand")
                         .HasColumnType("text")
@@ -1069,6 +1090,74 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.ToTable("reception_tasks", (string)null);
                 });
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.RiskSignal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("Weight")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_risk_signals_appointment_idempotency");
+
+                    b.HasIndex("AppointmentId", "OccurredAt")
+                        .HasDatabaseName("IX_risk_signals_appointment_occurred");
+
+                    b.ToTable("risk_signals", (string)null);
+                });
+
             modelBuilder.Entity("MedCareOS.Domain.Entities.ScheduleBlock", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1492,6 +1581,15 @@ namespace MedCareOS.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("ResolvedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.RiskSignal", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.ScheduleBlock", b =>

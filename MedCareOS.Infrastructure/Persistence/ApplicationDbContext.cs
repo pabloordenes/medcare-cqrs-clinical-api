@@ -11,6 +11,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     
     public DbSet<Appointment> Appointments { get; set; }
     public DbSet<AppointmentScheduledAction> AppointmentScheduledActions { get; set; }
+    public DbSet<RiskSignal> RiskSignals { get; set; }
     public DbSet<TenantConfirmationPolicy> TenantConfirmationPolicies { get; set; }
     public DbSet<Patient> Patients { get; set; }
     public DbSet<ScheduleBlock> ScheduleBlocks { get; set; }
