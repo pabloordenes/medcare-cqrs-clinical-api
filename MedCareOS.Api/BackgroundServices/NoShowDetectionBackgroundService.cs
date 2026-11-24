@@ -1,4 +1,5 @@
 using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Resolutions.Services;
 using MedCareOS.Domain.Repositories;
 
 namespace MedCareOS.Api.BackgroundServices;
@@ -43,6 +44,7 @@ public class NoShowDetectionBackgroundService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var appointmentRepository = scope.ServiceProvider.GetRequiredService<IAppointmentRepository>();
         var lifecyclePlanner = scope.ServiceProvider.GetRequiredService<IAppointmentLifecyclePlanner>();
+        var supersedingService = scope.ServiceProvider.GetService<IAiResolutionSupersedingService>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
         var expiredAppointments = await appointmentRepository.GetPastUnattendedAppointmentsAsync(DateTime.UtcNow, cancellationToken);
@@ -53,6 +55,10 @@ public class NoShowDetectionBackgroundService : BackgroundService
         {
             appointment.MarkNoShow();
             await lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "AppointmentNoShow", cancellationToken: cancellationToken);
+            if (supersedingService is not null)
+            {
+                await supersedingService.SupersedePendingForResourceAsync(appointment.Id, "AppointmentNoShow", cancellationToken);
+            }
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

@@ -41,5 +41,8 @@ public class AiResolutionTaskConfiguration : IEntityTypeConfiguration<AiResoluti
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .IsRequired();
+
+        builder.HasIndex(x => new { x.ResourceId, x.Status })
+            .HasDatabaseName("ix_ai_resolution_tasks_resource_status");
     }
 }

@@ -1,7 +1,8 @@
 using System.Text.Json;
+using MedCareOS.Application.Appointments.Commands.ConfirmAppointment;
+using MedCareOS.Application.Appointments.Commands.DeclineAppointment;
 using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Interfaces;
-using MedCareOS.Application.Notifications.Commands.ProcessPatientReply;
 using MedCareOS.Application.Notifications.Services;
 using MedCareOS.Application.Patients.Commands.RecordPatientOptOut;
 using MedCareOS.Domain.Entities;
@@ -125,6 +126,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
 
         Guid? targetAppointmentId = parsed.AppointmentId;
         Guid? sourceNotificationId = null;
+        Guid? sourceCorrelationId = null;
 
         if (targetAppointmentId.HasValue)
         {
@@ -143,6 +145,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
             var latestNotification = await _notificationRepository.GetLatestActionableByPatientAsync(patient.Id, cancellationToken);
             targetAppointmentId = latestNotification?.AppointmentId;
             sourceNotificationId = latestNotification?.Id;
+            sourceCorrelationId = latestNotification?.CorrelationId;
         }
 
         if (!targetAppointmentId.HasValue)
@@ -154,15 +157,55 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
             return;
         }
 
-        await _sender.Send(
-            new ProcessPatientReplyCommand(
-                AppointmentId: targetAppointmentId.Value,
-                PatientId: patient.Id,
-                NotificationId: sourceNotificationId,
-                Intent: parsed.Intent,
-                Channel: NotificationChannel.WhatsApp,
-                NormalizedKeyword: parsed.NormalizedKeyword,
-                ReceivedAtUtc: request.ReceivedAtUtc),
-            cancellationToken);
+        try
+        {
+            if (parsed.Intent == PatientReplyIntent.Confirm)
+            {
+                await _sender.Send(
+                    new ConfirmAppointmentCommand(
+                        AppointmentId: targetAppointmentId.Value,
+                        ExpectedPatientId: patient.Id,
+                        Channel: NotificationChannel.WhatsApp,
+                        NotificationId: sourceNotificationId,
+                        Source: "whatsapp_inbound",
+                        NormalizedKeyword: parsed.NormalizedKeyword,
+                        OccurredAtUtc: request.ReceivedAtUtc,
+                        CorrelationId: sourceCorrelationId,
+                        PublishPatientReplyEvent: true),
+                    cancellationToken);
+            }
+            else if (parsed.Intent == PatientReplyIntent.Cancel)
+            {
+                await _sender.Send(
+                    new DeclineAppointmentCommand(
+                        AppointmentId: targetAppointmentId.Value,
+                        ExpectedPatientId: patient.Id,
+                        Channel: NotificationChannel.WhatsApp,
+                        NotificationId: sourceNotificationId,
+                        Source: "whatsapp_inbound",
+                        Reason: "Declinada por paciente vía WhatsApp.",
+                        NormalizedKeyword: parsed.NormalizedKeyword,
+                        OccurredAtUtc: request.ReceivedAtUtc,
+                        CorrelationId: sourceCorrelationId,
+                        PublishPatientReplyEvent: true),
+                    cancellationToken);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Respuesta WhatsApp '{Intent}' ignorada para cita {AppointmentId} en estado terminal o inválido.",
+                parsed.Intent,
+                targetAppointmentId.Value);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Respuesta WhatsApp '{Intent}' ignorada porque la cita {AppointmentId} no existe.",
+                parsed.Intent,
+                targetAppointmentId.Value);
+        }
     }
 }

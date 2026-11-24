@@ -96,6 +96,14 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
                 await _unitOfWork.SaveChangesAsync(ct);
                 return;
             }
+
+            if (notification.Type is NotificationType.Reminder or NotificationType.FinalConfirmation &&
+                appointment.IsPatientConfirmed)
+            {
+                notification.Cancel("El paciente ya confirmó la cita antes del despacho.", utcNow);
+                await _unitOfWork.SaveChangesAsync(ct);
+                return;
+            }
         }
 
         // Verificar disponibilidad del canal principal antes de enviar; fallback inmediato si WA sin opt-in/teléfono

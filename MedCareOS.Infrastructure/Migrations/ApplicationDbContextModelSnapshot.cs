@@ -229,6 +229,9 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ResourceId", "Status")
+                        .HasDatabaseName("ix_ai_resolution_tasks_resource_status");
+
                     b.ToTable("ai_resolution_tasks", (string)null);
                 });
 

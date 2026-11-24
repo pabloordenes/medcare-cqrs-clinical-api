@@ -1,5 +1,5 @@
-using MassTransit;
-using MedCareOS.Application.Notifications.Events;
+using MedCareOS.Application.Appointments.Commands.ConfirmAppointment;
+using MedCareOS.Application.Appointments.Commands.DeclineAppointment;
 using MedCareOS.Application.Patients.Commands.RecordPatientOptOut;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
@@ -11,34 +11,30 @@ namespace MedCareOS.Application.Notifications.Commands.ProcessPatientReply;
 public class ProcessPatientReplyCommandHandler : IRequestHandler<ProcessPatientReplyCommand>
 {
     private readonly IAppointmentRepository _appointmentRepository;
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly ISender _sender;
     private readonly ILogger<ProcessPatientReplyCommandHandler> _logger;
 
     public ProcessPatientReplyCommandHandler(
         IAppointmentRepository appointmentRepository,
-        IUnitOfWork unitOfWork,
-        IPublishEndpoint publishEndpoint,
         ISender sender,
         ILogger<ProcessPatientReplyCommandHandler> logger)
     {
         _appointmentRepository = appointmentRepository;
-        _unitOfWork = unitOfWork;
-        _publishEndpoint = publishEndpoint;
         _sender = sender;
         _logger = logger;
     }
 
     public async Task Handle(ProcessPatientReplyCommand request, CancellationToken cancellationToken)
     {
+        var sourcePrefix = request.Channel.ToString().ToLowerInvariant();
+
         if (request.Intent == PatientReplyIntent.OptOut)
         {
             await _sender.Send(
                 new RecordPatientOptOutCommand(
                     PatientId: request.PatientId,
                     AuthenticatedUserId: null,
-                    Source: $"{request.Channel.ToString().ToLowerInvariant()}_reply"),
+                    Source: $"{sourcePrefix}_reply"),
                 cancellationToken);
             return;
         }
@@ -52,60 +48,45 @@ public class ProcessPatientReplyCommandHandler : IRequestHandler<ProcessPatientR
         if (appointment.PatientId != request.PatientId)
             throw new InvalidOperationException("La cita no pertenece al paciente indicado.");
 
-        if (request.Intent == PatientReplyIntent.Confirm)
+        try
         {
-            if (appointment.Status == AppointmentStatus.Scheduled)
+            if (request.Intent == PatientReplyIntent.Confirm)
             {
-                appointment.Confirm();
+                await _sender.Send(
+                    new ConfirmAppointmentCommand(
+                        AppointmentId: request.AppointmentId,
+                        ExpectedPatientId: request.PatientId,
+                        Channel: request.Channel,
+                        NotificationId: request.NotificationId,
+                        Source: $"{sourcePrefix}_reply",
+                        NormalizedKeyword: request.NormalizedKeyword,
+                        OccurredAtUtc: request.ReceivedAtUtc,
+                        PublishPatientReplyEvent: true),
+                    cancellationToken);
             }
-            else if (appointment.Status == AppointmentStatus.Confirmed)
+            else if (request.Intent == PatientReplyIntent.Cancel)
             {
-                _logger.LogInformation(
-                    "Confirmación repetida ignorada idempotente para cita {AppointmentId}.",
-                    appointment.Id);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Confirmación recibida para cita {AppointmentId} en estado no confirmable '{Status}'.",
-                    appointment.Id,
-                    appointment.Status);
-                return;
+                await _sender.Send(
+                    new DeclineAppointmentCommand(
+                        AppointmentId: request.AppointmentId,
+                        ExpectedPatientId: request.PatientId,
+                        Channel: request.Channel,
+                        NotificationId: request.NotificationId,
+                        Source: $"{sourcePrefix}_reply",
+                        Reason: $"Declinada por paciente vía {request.Channel}",
+                        NormalizedKeyword: request.NormalizedKeyword,
+                        OccurredAtUtc: request.ReceivedAtUtc,
+                        PublishPatientReplyEvent: true),
+                    cancellationToken);
             }
         }
-        else if (request.Intent == PatientReplyIntent.Cancel)
+        catch (InvalidOperationException ex)
         {
-            if (appointment.Status is AppointmentStatus.Scheduled or AppointmentStatus.Confirmed)
-            {
-                appointment.Cancel($"Cancelada por paciente vía {request.Channel}");
-            }
-            else if (appointment.Status == AppointmentStatus.Cancelled)
-            {
-                _logger.LogInformation(
-                    "Cancelación repetida ignorada idempotente para cita {AppointmentId}.",
-                    appointment.Id);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Cancelación recibida para cita {AppointmentId} en estado no cancelable '{Status}'.",
-                    appointment.Id,
-                    appointment.Status);
-                return;
-            }
+            _logger.LogWarning(
+                ex,
+                "Acción '{Intent}' recibida para cita {AppointmentId} en estado terminal o no accionable.",
+                request.Intent,
+                request.AppointmentId);
         }
-
-        await _publishEndpoint.Publish(
-            new PatientAppointmentReplyReceived(
-                AppointmentId: appointment.Id,
-                PatientId: request.PatientId,
-                NotificationId: request.NotificationId,
-                Intent: request.Intent,
-                Channel: request.Channel,
-                ReceivedAtUtc: request.ReceivedAtUtc,
-                NormalizedKeyword: request.NormalizedKeyword),
-            cancellationToken);
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }
