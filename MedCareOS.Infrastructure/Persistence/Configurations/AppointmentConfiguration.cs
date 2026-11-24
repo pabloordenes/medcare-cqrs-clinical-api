@@ -1,4 +1,5 @@
-﻿using MedCareOS.Domain.Entities;
+﻿using MedCareOS.Domain.Constants;
+using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -16,7 +17,12 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id");
 
-        // 3. Foreign Keys (Forzando el snake_case de Supabase)
+        // 3. Foreign Keys y Tenant (Forzando el snake_case de Supabase)
+        builder.Property(x => x.TenantId)
+            .HasColumnName("tenant_id")
+            .HasDefaultValue(RiskThresholds.DefaultTenantId)
+            .IsRequired();
+
         builder.Property(x => x.ScheduleBlockId).HasColumnName("schedule_block_id");
         builder.Property(x => x.PatientId).HasColumnName("paciente_id");
         
@@ -24,6 +30,32 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
             .HasColumnName("estado")
             .HasConversion<string>()
             .IsRequired();
+
+        builder.Property(x => x.ConfirmationState)
+            .HasColumnName("confirmation_state")
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(ConfirmationState.Pending)
+            .IsRequired();
+
+        builder.Property(x => x.OrchestrationSuppressed)
+            .HasColumnName("orchestration_suppressed")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(x => x.ConfirmedAt)
+            .HasColumnName("confirmed_at");
+
+        builder.Property(x => x.FinalConfirmationRequestedAt)
+            .HasColumnName("final_confirmation_requested_at");
+
+        builder.Property(x => x.DeadlineMissedAt)
+            .HasColumnName("deadline_missed_at");
+
+        builder.Property(x => x.ConfirmationOutcome)
+            .HasColumnName("confirmation_outcome")
+            .HasConversion<string>()
+            .HasMaxLength(40);
         
         builder.Property(x => x.SymptomsRaw)
             .HasColumnName("sintomas_texto");
@@ -96,5 +128,9 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasIndex(x => new { x.ScoringStatus, x.NlpStatus, x.NextScoringRetryAt })
             .HasDatabaseName("IX_citas_scoring_retry")
             .HasFilter("estado IN ('Scheduled', 'Confirmed') AND (scoring_status <> 'Scored' OR nlp_status IN ('Pending', 'Failed'))");
+
+        builder.HasIndex(x => new { x.TenantId, x.ConfirmationOutcome, x.ScoredAt })
+            .HasDatabaseName("IX_citas_calibration_outcome")
+            .HasFilter("confirmation_outcome IS NOT NULL");
     }
 }
