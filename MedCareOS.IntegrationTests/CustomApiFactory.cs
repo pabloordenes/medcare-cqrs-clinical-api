@@ -64,6 +64,9 @@ public class CustomApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Notifications:ActionTokenSecret", "test-medcare-action-token-hmac-secret-at-least-32-chars");
         builder.UseSetting("Notifications:EmailProvider", "Fake");
         builder.UseSetting("Notifications:WhatsAppProvider", "Fake");
+        builder.UseSetting("Notifications:WhatsApp:AppSecret", "test-meta-app-secret-123456");
+        builder.UseSetting("Notifications:WhatsApp:WebhookVerifyToken", "test-meta-verify-token-123456");
+        builder.UseSetting("Notifications:Resend:WebhookSecret", "whsec_dGVzdC1yZXNlbmQtc3ZpeC1zaWduaW5nLWtleS0zMmI=");
 
         builder.ConfigureServices(services =>
         {
