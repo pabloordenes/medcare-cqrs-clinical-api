@@ -59,6 +59,8 @@ public class CustomApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("AiService:Audience", "authenticated");
         builder.UseSetting("AiService:Role", "service-ia");
         builder.UseSetting("AiService:PrivateKeyContent", _omroTestRsa.ExportRSAPrivateKeyPem());
+        builder.UseSetting("RabbitMq:RedeliveryMode", "None");
+        builder.UseSetting("Scoring:PublishAnomalyOnCreate", "false");
 
         builder.ConfigureServices(services =>
         {

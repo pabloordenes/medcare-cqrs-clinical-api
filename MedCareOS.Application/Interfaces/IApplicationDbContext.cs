@@ -14,6 +14,7 @@ public interface IApplicationDbContext
     DbSet<AiResolutionTask> AiResolutionTasks { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; }
+    DbSet<ProcessedMessage> ProcessedMessages { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

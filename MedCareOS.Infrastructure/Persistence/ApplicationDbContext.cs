@@ -1,4 +1,5 @@
-﻿using MedCareOS.Application.Interfaces;
+﻿using MassTransit;
+using MedCareOS.Application.Interfaces;
 using MedCareOS.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,11 +19,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<WaitingList> WaitingLists { get; set; }
     public DbSet<AiResolutionTask> AiResolutionTasks { get; set; }
     public DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; set; }
+    public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
-            
+
+        builder.AddInboxStateEntity(x => x.ToTable("inbox_state", "messaging"));
+        builder.AddOutboxMessageEntity(x => x.ToTable("outbox_message", "messaging"));
+        builder.AddOutboxStateEntity(x => x.ToTable("outbox_state", "messaging"));
+
         base.OnModelCreating(builder);
     }
 }

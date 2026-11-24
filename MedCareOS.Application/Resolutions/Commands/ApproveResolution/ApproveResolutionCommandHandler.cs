@@ -27,8 +27,7 @@ public class ApproveResolutionCommandHandler : IRequestHandler<ApproveResolution
 
         // mutacion de dominio
         task.Approve(request.ApprovedBy);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         await _publishEndpoint.Publish(
             new ResolutionApproved(
                 TenantId: RiskThresholds.DefaultTenantId,
@@ -37,5 +36,7 @@ public class ApproveResolutionCommandHandler : IRequestHandler<ApproveResolution
                 ResourceId: task.ResourceId,
                 AiPlanJson: task.AiPlanJson),
             cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }
