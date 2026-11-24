@@ -13,7 +13,7 @@ public class WebhookSignatureVerifierTests
     [Fact]
     public void MetaVerifier_ValidSignaturePasses_AndTamperedOrMissingFailsClosed()
     {
-        const string appSecret = "meta-super-secret-key-123";
+        var appSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
         var verifier = new MetaWebhookSignatureVerifier(
             Options.Create(new MetaWhatsAppOptions { AppSecret = appSecret }));
 
@@ -55,7 +55,7 @@ public class WebhookSignatureVerifierTests
     [Fact]
     public void ResendSvixVerifier_ValidSignaturePasses_AndExpiredOrTamperedFails()
     {
-        var keyBytes = Encoding.UTF8.GetBytes("test-resend-svix-signing-key-32b");
+        var keyBytes = RandomNumberGenerator.GetBytes(32);
         var webhookSecret = "whsec_" + Convert.ToBase64String(keyBytes);
 
         var verifier = new ResendWebhookSignatureVerifier(

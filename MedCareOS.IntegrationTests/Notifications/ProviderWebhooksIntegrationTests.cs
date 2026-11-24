@@ -15,10 +15,6 @@ namespace MedCareOS.IntegrationTests.Notifications;
 
 public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
 {
-    private const string TestMetaAppSecret = "test-meta-app-secret-123456";
-    private const string TestMetaVerifyToken = "test-meta-verify-token-123456";
-    private const string TestResendSecret = "whsec_dGVzdC1yZXNlbmQtc3ZpeC1zaWduaW5nLWtleS0zMmI=";
-
     private readonly CustomApiFactory _factory;
 
     public ProviderWebhooksIntegrationTests(CustomApiFactory factory)
@@ -27,22 +23,23 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
     }
 
     [Fact]
-    public async Task MetaVerificationChallenge_ValidTokenReturns200Challenge_InvalidReturns403()
+    public async Task MetaVerificationChallenge_ValidTokenReturns200Challenge_InvalidReturns403WithoutLeakingSecret()
     {
         using var client = _factory.CreateClient();
 
         var validRes = await client.GetAsync(
-            $"/api/webhooks/notifications/whatsapp?hub.mode=subscribe&hub.verify_token={TestMetaVerifyToken}&hub.challenge=challenge_12345");
+            $"/api/webhooks/notifications/whatsapp?hub.mode=subscribe&hub.verify_token={_factory.TestMetaVerifyToken}&hub.challenge=challenge_12345");
         validRes.StatusCode.Should().Be(HttpStatusCode.OK);
         (await validRes.Content.ReadAsStringAsync()).Should().Be("challenge_12345");
 
         var invalidRes = await client.GetAsync(
             "/api/webhooks/notifications/whatsapp?hub.mode=subscribe&hub.verify_token=wrong_token&hub.challenge=challenge_12345");
         invalidRes.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await invalidRes.Content.ReadAsStringAsync()).Should().NotContain(_factory.TestMetaVerifyToken);
     }
 
     [Fact]
-    public async Task MetaWebhook_InvalidSignatureReturns401_AndValidDeliveryStatusesUpdateMonotonically()
+    public async Task MetaWebhook_InvalidSignatureReturns401WithoutLeakingSecret_AndValidDeliveryStatusesUpdateMonotonically()
     {
         var (_, _, notificationId) = await SeedNotificationAsync(
             NotificationChannel.WhatsApp,
@@ -54,21 +51,23 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
         var readPayload = BuildMetaStatusPayload("wamid.status_test_1", "read", 1732450100);
         var deliveredPayload = BuildMetaStatusPayload("wamid.status_test_1", "delivered", 1732450050);
 
-        // Invalid signature -> 401
+        // Invalid signature -> 401 and zero secret/signature leakage
         var badReq = CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", readPayload, "wrong-secret");
         var badRes = await client.SendAsync(badReq);
         badRes.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var badBody = await badRes.Content.ReadAsStringAsync();
+        badBody.Should().NotContain(_factory.TestMetaAppSecret);
 
         // Read arrives first -> status becomes Read
-        var readRes1 = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", readPayload, TestMetaAppSecret));
+        var readRes1 = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", readPayload, _factory.TestMetaAppSecret));
         readRes1.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Duplicate read replay -> idempotent 200
-        var readRes2 = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", readPayload, TestMetaAppSecret));
+        var readRes2 = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", readPayload, _factory.TestMetaAppSecret));
         readRes2.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Out-of-order Delivered arrives after Read -> status stays Read (monotonic)
-        var deliveredRes = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", deliveredPayload, TestMetaAppSecret));
+        var deliveredRes = await client.SendAsync(CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", deliveredPayload, _factory.TestMetaAppSecret));
         deliveredRes.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var scope = _factory.Services.CreateScope();
@@ -105,19 +104,19 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
             $"CONFIRM:{appConfirmId}",
             "Confirmar");
         var confirmRes = await client.SendAsync(
-            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", confirmJson, TestMetaAppSecret));
+            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", confirmJson, _factory.TestMetaAppSecret));
         confirmRes.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // 2. Free text "NO" cancels appointment #2 via latest actionable notification
         var cancelJson = BuildMetaInboundTextPayload($"wamid.in.{Guid.NewGuid():N}", phone2.TrimStart('+'), "NO");
         var cancelRes = await client.SendAsync(
-            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", cancelJson, TestMetaAppSecret));
+            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", cancelJson, _factory.TestMetaAppSecret));
         cancelRes.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // 3. Free text "STOP" opts out patient #1
         var stopJson = BuildMetaInboundTextPayload($"wamid.in.{Guid.NewGuid():N}", phone1.TrimStart('+'), "STOP");
         var stopRes = await client.SendAsync(
-            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", stopJson, TestMetaAppSecret));
+            CreateMetaSignedRequest("/api/webhooks/notifications/whatsapp", stopJson, _factory.TestMetaAppSecret));
         stopRes.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using (var scope = _factory.Services.CreateScope())
@@ -146,7 +145,7 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
     }
 
     [Fact]
-    public async Task ResendEmailWebhook_ValidSvixUpdatesStatusAndComplaintTriggersOptOut_InvalidReturns401()
+    public async Task ResendEmailWebhook_ValidSvixUpdatesStatusAndComplaintTriggersOptOut_InvalidReturns401WithoutLeakingSecret()
     {
         var emailId1 = $"re_{Guid.NewGuid():N}";
         var emailId2 = $"re_{Guid.NewGuid():N}";
@@ -156,7 +155,7 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
 
         using var client = _factory.CreateClient();
 
-        // Invalid signature -> 401
+        // Invalid signature -> 401 and zero secret leakage
         var deliveredBody = $"{{\"type\":\"email.delivered\",\"created_at\":\"2026-11-24T15:00:00Z\",\"data\":{{\"email_id\":\"{emailId1}\"}}}}";
         var invalidReq = new HttpRequestMessage(HttpMethod.Post, "/api/webhooks/notifications/email")
         {
@@ -165,15 +164,18 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
         invalidReq.Headers.Add("svix-id", $"msg_{Guid.NewGuid():N}");
         invalidReq.Headers.Add("svix-timestamp", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
         invalidReq.Headers.Add("svix-signature", "v1,aW52YWxpZA==");
-        (await client.SendAsync(invalidReq)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var invalidRes = await client.SendAsync(invalidReq);
+        invalidRes.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var invalidBody = await invalidRes.Content.ReadAsStringAsync();
+        invalidBody.Should().NotContain(_factory.TestResendWebhookSecret);
 
         // Valid email.delivered -> Delivered
-        var validDelivered = CreateSvixSignedRequest("/api/webhooks/notifications/email", deliveredBody, TestResendSecret);
+        var validDelivered = CreateSvixSignedRequest("/api/webhooks/notifications/email", deliveredBody, _factory.TestResendWebhookSecret);
         (await client.SendAsync(validDelivered)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Valid email.complained -> Failed + Patient OptOut
         var complainedBody = $"{{\"type\":\"email.complained\",\"created_at\":\"2026-11-24T15:05:00Z\",\"data\":{{\"email_id\":\"{emailId2}\"}}}}";
-        var validComplained = CreateSvixSignedRequest("/api/webhooks/notifications/email", complainedBody, TestResendSecret);
+        var validComplained = CreateSvixSignedRequest("/api/webhooks/notifications/email", complainedBody, _factory.TestResendWebhookSecret);
         (await client.SendAsync(validComplained)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var scope = _factory.Services.CreateScope();
@@ -202,7 +204,7 @@ public class ProviderWebhooksIntegrationTests : IClassFixture<CustomApiFactory>
         });
 
         using var client = limitedFactory.CreateClient();
-        var url = $"/api/webhooks/notifications/whatsapp?hub.mode=subscribe&hub.verify_token={TestMetaVerifyToken}&hub.challenge=ok";
+        var url = $"/api/webhooks/notifications/whatsapp?hub.mode=subscribe&hub.verify_token={_factory.TestMetaVerifyToken}&hub.challenge=ok";
 
         var r1 = await client.GetAsync(url);
         var r2 = await client.GetAsync(url);

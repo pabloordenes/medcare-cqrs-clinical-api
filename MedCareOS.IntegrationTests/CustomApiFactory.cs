@@ -21,6 +21,10 @@ public class CustomApiFactory : WebApplicationFactory<Program>
     private readonly string _dbName = $"MedCareTestDb_{Guid.NewGuid()}";
 
     public string OmroPublicKeyPem => _omroTestRsa.ExportSubjectPublicKeyInfoPem();
+    public string TestActionTokenSecret { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    public string TestMetaAppSecret { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+    public string TestMetaVerifyToken { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+    public string TestResendWebhookSecret { get; } = "whsec_" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     public string GenerateOmroServiceToken(string role = "omro_service")
     {
@@ -61,12 +65,12 @@ public class CustomApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("AiService:PrivateKeyContent", _omroTestRsa.ExportRSAPrivateKeyPem());
         builder.UseSetting("RabbitMq:RedeliveryMode", "None");
         builder.UseSetting("Scoring:PublishAnomalyOnCreate", "false");
-        builder.UseSetting("Notifications:ActionTokenSecret", "test-medcare-action-token-hmac-secret-at-least-32-chars");
+        builder.UseSetting("Notifications:ActionTokenSecret", TestActionTokenSecret);
         builder.UseSetting("Notifications:EmailProvider", "Fake");
         builder.UseSetting("Notifications:WhatsAppProvider", "Fake");
-        builder.UseSetting("Notifications:WhatsApp:AppSecret", "test-meta-app-secret-123456");
-        builder.UseSetting("Notifications:WhatsApp:WebhookVerifyToken", "test-meta-verify-token-123456");
-        builder.UseSetting("Notifications:Resend:WebhookSecret", "whsec_dGVzdC1yZXNlbmQtc3ZpeC1zaWduaW5nLWtleS0zMmI=");
+        builder.UseSetting("Notifications:WhatsApp:AppSecret", TestMetaAppSecret);
+        builder.UseSetting("Notifications:WhatsApp:WebhookVerifyToken", TestMetaVerifyToken);
+        builder.UseSetting("Notifications:Resend:WebhookSecret", TestResendWebhookSecret);
 
         builder.ConfigureServices(services =>
         {
