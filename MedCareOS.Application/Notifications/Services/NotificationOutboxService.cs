@@ -37,7 +37,11 @@ public class NotificationOutboxService : INotificationOutboxService
             return new NotificationEnqueueResult(NotificationEnqueueOutcome.SkippedOptOut);
         }
 
-        var effectiveChannel = request.Patient.GetEffectiveReminderChannel();
+        var effectiveChannel = request.ChannelOverride.HasValue
+            ? (request.Patient.CanReceiveChannel(request.ChannelOverride.Value)
+                ? request.ChannelOverride
+                : request.Patient.GetEffectiveReminderChannel())
+            : request.Patient.GetEffectiveReminderChannel();
         if (!effectiveChannel.HasValue)
         {
             _logger.LogInformation(
@@ -86,7 +90,7 @@ public class NotificationOutboxService : INotificationOutboxService
 
         await _notificationRepository.AddAsync(notification, cancellationToken);
 
-        if (request.ScheduledFor <= utcNow)
+        if (request.ForceImmediateDispatch || request.ScheduledFor <= utcNow)
         {
             await _publishEndpoint.Publish(
                 new SendNotificationRequested(

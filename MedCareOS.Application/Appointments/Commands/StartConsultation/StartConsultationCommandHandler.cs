@@ -1,4 +1,5 @@
-﻿using MedCareOS.Domain.Repositories;
+﻿using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Domain.Repositories;
 using MediatR;
 
 namespace MedCareOS.Application.Appointments.Commands.StartConsultation;
@@ -6,11 +7,16 @@ namespace MedCareOS.Application.Appointments.Commands.StartConsultation;
 public class StartConsultationCommandHandler : IRequestHandler<StartConsultationCommand>
 {
     private readonly IAppointmentRepository _appointmentRepository;
+    private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
     private readonly IUnitOfWork _unitOfWork;
 
-    public StartConsultationCommandHandler(IAppointmentRepository appointmentRepository, IUnitOfWork unitOfWork)
+    public StartConsultationCommandHandler(
+        IAppointmentRepository appointmentRepository,
+        IAppointmentLifecyclePlanner lifecyclePlanner,
+        IUnitOfWork unitOfWork)
     {
         _appointmentRepository = appointmentRepository;
+        _lifecyclePlanner = lifecyclePlanner;
         _unitOfWork = unitOfWork;
     }
 
@@ -22,6 +28,7 @@ public class StartConsultationCommandHandler : IRequestHandler<StartConsultation
             throw new KeyNotFoundException($"La cita con id {request.AppointmentId} no se encuentra.");
         
         appointment.StartConsultation();
+        await _lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "ConsultationStarted", cancellationToken: cancellationToken);
         
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }

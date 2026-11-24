@@ -65,6 +65,20 @@ public class NotificationRepository : INotificationRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<Notification?> GetLatestByAppointmentAndTypeAsync(
+        Guid appointmentId,
+        NotificationType type,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Notifications
+            .AsNoTracking()
+            .Where(n => n.AppointmentId == appointmentId
+                        && n.Type == type
+                        && n.Status != NotificationStatus.Cancelled)
+            .OrderByDescending(n => n.SentAt ?? n.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<List<Notification>> GetPendingRedactionBatchAsync(
         DateTimeOffset createdBeforeUtc,
         int batchSize,

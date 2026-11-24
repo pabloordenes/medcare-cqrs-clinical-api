@@ -167,6 +167,65 @@ public class Patient
 
     public bool HasOptedOut() => OptOutAt.HasValue;
 
+    public bool CanReceiveChannel(NotificationChannel channel)
+    {
+        if (OptOutAt.HasValue)
+            return false;
+
+        return channel switch
+        {
+            NotificationChannel.WhatsApp => WhatsAppOptIn && PhoneNormalizer.ToWhatsAppDigits(Phone) is not null,
+            NotificationChannel.Email => !string.IsNullOrWhiteSpace(Email) && Email.Contains('@'),
+            _ => false
+        };
+    }
+
+    public NotificationChannel? ResolvePrimaryChannel(PrimaryChannelStrategy strategy)
+    {
+        if (OptOutAt.HasValue)
+            return null;
+
+        return strategy switch
+        {
+            PrimaryChannelStrategy.WhatsAppFirst =>
+                CanReceiveChannel(NotificationChannel.WhatsApp)
+                    ? NotificationChannel.WhatsApp
+                    : (CanReceiveChannel(NotificationChannel.Email) ? NotificationChannel.Email : null),
+            PrimaryChannelStrategy.EmailFirst =>
+                CanReceiveChannel(NotificationChannel.Email)
+                    ? NotificationChannel.Email
+                    : (CanReceiveChannel(NotificationChannel.WhatsApp) ? NotificationChannel.WhatsApp : null),
+            _ => GetEffectiveReminderChannel()
+        };
+    }
+
+    public NotificationChannel? ResolveAlternateChannel(
+        NotificationChannel previousChannel,
+        AlternateChannelStrategy strategy)
+    {
+        if (OptOutAt.HasValue)
+            return null;
+
+        if (strategy == AlternateChannelStrategy.SameChannelOnly)
+        {
+            return CanReceiveChannel(previousChannel)
+                ? previousChannel
+                : GetEffectiveReminderChannel();
+        }
+
+        var opposite = previousChannel == NotificationChannel.WhatsApp
+            ? NotificationChannel.Email
+            : NotificationChannel.WhatsApp;
+
+        if (CanReceiveChannel(opposite))
+            return opposite;
+
+        if (CanReceiveChannel(previousChannel))
+            return previousChannel;
+
+        return GetEffectiveReminderChannel();
+    }
+
     public NotificationChannel? GetEffectiveReminderChannel()
     {
         if (OptOutAt.HasValue)

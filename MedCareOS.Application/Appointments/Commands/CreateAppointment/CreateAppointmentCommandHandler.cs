@@ -1,5 +1,6 @@
 ﻿using MassTransit;
 using MedCareOS.Application.Appointments.Events;
+using MedCareOS.Application.Appointments.Lifecycle;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
 using MedCareOS.Application.Notifications.Services;
@@ -23,6 +24,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly IStaffRepository _staffRepository;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly INotificationOutboxService _notificationOutboxService;
+    private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
     private readonly NotificationOptions _notificationOptions;
 
     public CreateAppointmentCommandHandler(
@@ -33,6 +35,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         IStaffRepository staffRepository,
         IPublishEndpoint publishEndpoint,
         INotificationOutboxService notificationOutboxService,
+        IAppointmentLifecyclePlanner lifecyclePlanner,
         IOptions<NotificationOptions> notificationOptions)
     {
         _appointmentRepository = appointmentRepository;
@@ -42,6 +45,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         _staffRepository = staffRepository;
         _publishEndpoint = publishEndpoint;
         _notificationOutboxService = notificationOutboxService;
+        _lifecyclePlanner = lifecyclePlanner;
         _notificationOptions = notificationOptions.Value;
     }
 
@@ -116,6 +120,13 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
                     ["specialtyDisplay"] = specialtyDisplay
                 },
                 CorrelationId: correlationId),
+            cancellationToken);
+
+        await _lifecyclePlanner.ScheduleForAppointmentAsync(
+            newAppointment,
+            scheduleBlock,
+            correlationId,
+            newAppointment.CreatedAt,
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

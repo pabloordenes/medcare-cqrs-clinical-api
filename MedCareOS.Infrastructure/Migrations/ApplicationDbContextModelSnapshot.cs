@@ -379,6 +379,122 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.ToTable("citas", (string)null);
                 });
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.AppointmentScheduledAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<Guid?>("LockToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("lock_token");
+
+                    b.Property<DateTimeOffset?>("LockedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_at");
+
+                    b.Property<string>("LockedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("locked_by");
+
+                    b.Property<int>("MaxAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(5)
+                        .HasColumnName("max_attempts");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<int>("PlanVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("plan_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DueAt")
+                        .HasDatabaseName("IX_scheduled_actions_due_claim")
+                        .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("LeaseUntil")
+                        .HasDatabaseName("IX_scheduled_actions_expired_lease")
+                        .HasFilter("status = 'Processing'");
+
+                    b.HasIndex("AppointmentId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("UX_scheduled_actions_active_appointment_kind")
+                        .HasFilter("status IN ('Pending', 'Processing')");
+
+                    b.HasIndex("AppointmentId", "Status")
+                        .HasDatabaseName("IX_scheduled_actions_appointment_status");
+
+                    b.ToTable("appointment_scheduled_actions", (string)null);
+                });
+
             modelBuilder.Entity("MedCareOS.Domain.Entities.Box", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1297,6 +1413,15 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
                         .WithMany()
                         .HasForeignKey("ScheduleBlockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.AppointmentScheduledAction", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

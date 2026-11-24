@@ -10,6 +10,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
     
     public DbSet<Appointment> Appointments { get; set; }
+    public DbSet<AppointmentScheduledAction> AppointmentScheduledActions { get; set; }
     public DbSet<TenantConfirmationPolicy> TenantConfirmationPolicies { get; set; }
     public DbSet<Patient> Patients { get; set; }
     public DbSet<ScheduleBlock> ScheduleBlocks { get; set; }
