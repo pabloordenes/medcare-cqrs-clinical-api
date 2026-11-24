@@ -14,6 +14,7 @@ using MedCareOS.Application.Notifications.Consumers;
 using MedCareOS.Application.Notifications.Events;
 using MedCareOS.Application.Notifications.Services;
 using MedCareOS.Application.Notifications.Templates;
+using MedCareOS.Application.Resolutions.Services;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
@@ -378,6 +379,8 @@ public class ScheduledActionsWorkerIntegrationTests
             services.AddScoped<IAppointmentScheduledActionRepository, AppointmentScheduledActionRepository>();
             services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
             services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+            services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
+            services.AddScoped<IAiResolutionSupersedingService, AiResolutionSupersedingService>();
             services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
             services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
             services.AddScoped<IAiClinicalService, StubWorkerAiClinicalService>();

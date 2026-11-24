@@ -18,7 +18,14 @@ public class GetPendingResolutionsQueryHandler : IRequestHandler<GetPendingResol
     {
         var pendingResolutions = await _dbContext.AiResolutionTasks
             .AsNoTracking()
-            .Where(t => t.Status == AiResolutionStatus.Pending)
+            .Where(t => t.Status == AiResolutionStatus.Pending &&
+                        !_dbContext.Appointments.Any(a =>
+                            a.Id == t.ResourceId &&
+                            (a.OrchestrationSuppressed ||
+                             a.Status != AppointmentStatus.Scheduled ||
+                             a.ConfirmationState == ConfirmationState.ConfirmedEarly ||
+                             a.ConfirmationState == ConfirmationState.FinalConfirmed ||
+                             a.ConfirmationState == ConfirmationState.DeclinedByPatient)))
             .OrderByDescending(t => t.RiskProbability) // criticas primero
             .Select(t => new ResolutionTaskDto(
                 t.Id,

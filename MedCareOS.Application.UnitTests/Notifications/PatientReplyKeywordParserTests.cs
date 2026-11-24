@@ -18,6 +18,10 @@ public class PatientReplyKeywordParserTests
         var cancel = PatientReplyKeywordParser.Parse($"CANCEL:{appointmentId}", "Cancelar");
         cancel.Intent.Should().Be(PatientReplyIntent.Cancel);
         cancel.AppointmentId.Should().Be(appointmentId);
+
+        var decline = PatientReplyKeywordParser.Parse($"DECLINE:{appointmentId}", "Declinar");
+        decline.Intent.Should().Be(PatientReplyIntent.Cancel);
+        decline.AppointmentId.Should().Be(appointmentId);
     }
 
     [Theory]
@@ -27,6 +31,8 @@ public class PatientReplyKeywordParserTests
     [InlineData("1", PatientReplyIntent.Confirm)]
     [InlineData("no", PatientReplyIntent.Cancel)]
     [InlineData("Cancelo", PatientReplyIntent.Cancel)]
+    [InlineData("Declino", PatientReplyIntent.Cancel)]
+    [InlineData("declinar", PatientReplyIntent.Cancel)]
     [InlineData("2", PatientReplyIntent.Cancel)]
     [InlineData("STOP", PatientReplyIntent.OptOut)]
     [InlineData("no más", PatientReplyIntent.OptOut)]

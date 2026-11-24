@@ -104,7 +104,7 @@ public class PatientActionTokenService : IPatientActionTokenService
         ).FirstOrDefaultAsync(cancellationToken);
 
         if (summary is null ||
-            summary.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished)
+            summary.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished or AppointmentStatus.InProgress)
         {
             return new ActionTokenPreviewResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
         }
@@ -166,7 +166,7 @@ public class PatientActionTokenService : IPatientActionTokenService
                 .FirstOrDefaultAsync(a => a.Id == token.AppointmentId && a.PatientId == token.PatientId, cancellationToken);
 
             if (appointment is null ||
-                appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished)
+                appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished or AppointmentStatus.InProgress)
             {
                 return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
             }

@@ -1,4 +1,5 @@
 using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Resolutions.Services;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 
@@ -8,15 +9,18 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
 {
     private readonly IAppointmentRepository _appointmentRepository;
     private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
+    private readonly IAiResolutionSupersedingService _resolutionSupersedingService;
     private readonly IUnitOfWork _unitOfWork;
 
     public CheckInAppointmentCommandHandler(
         IAppointmentRepository appointmentRepository,
         IAppointmentLifecyclePlanner lifecyclePlanner,
+        IAiResolutionSupersedingService resolutionSupersedingService,
         IUnitOfWork unitOfWork)
     {
         _appointmentRepository = appointmentRepository;
         _lifecyclePlanner = lifecyclePlanner;
+        _resolutionSupersedingService = resolutionSupersedingService;
         _unitOfWork = unitOfWork;
     }
 
@@ -27,6 +31,7 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
 
         appointment.CheckIn();
         await _lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "AppointmentCheckedIn", cancellationToken: cancellationToken);
+        await _resolutionSupersedingService.SupersedePendingForResourceAsync(appointment.Id, "AppointmentCheckedIn", cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

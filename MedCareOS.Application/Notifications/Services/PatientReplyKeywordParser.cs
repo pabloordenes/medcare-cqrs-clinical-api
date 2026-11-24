@@ -28,6 +28,8 @@ public static class PatientReplyKeywordParser
         "NO",
         "CANCELO",
         "CANCELAR",
+        "DECLINO",
+        "DECLINAR",
         "2",
         "NO ASISTO",
         "RECHAZO",
@@ -54,6 +56,9 @@ public static class PatientReplyKeywordParser
 
             if (TryParseStructuredPayload(trimmedPayload, "CANCEL:", PatientReplyIntent.Cancel, out var cancelParsed))
                 return cancelParsed;
+
+            if (TryParseStructuredPayload(trimmedPayload, "DECLINE:", PatientReplyIntent.Cancel, out var declineParsed))
+                return declineParsed;
 
             var payloadKeyword = NormalizeText(trimmedPayload);
             var payloadIntent = ClassifyKeyword(payloadKeyword);
