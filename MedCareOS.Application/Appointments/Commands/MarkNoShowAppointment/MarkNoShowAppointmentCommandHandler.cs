@@ -1,3 +1,4 @@
+using MedCareOS.Application.Appointments.Lifecycle;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 
@@ -6,11 +7,16 @@ namespace MedCareOS.Application.Appointments.Commands.MarkNoShowAppointment;
 public class MarkNoShowAppointmentCommandHandler : IRequestHandler<MarkNoShowAppointmentCommand>
 {
     private readonly IAppointmentRepository _appointmentRepository;
+    private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
     private readonly IUnitOfWork _unitOfWork;
 
-    public MarkNoShowAppointmentCommandHandler(IAppointmentRepository appointmentRepository, IUnitOfWork unitOfWork)
+    public MarkNoShowAppointmentCommandHandler(
+        IAppointmentRepository appointmentRepository,
+        IAppointmentLifecyclePlanner lifecyclePlanner,
+        IUnitOfWork unitOfWork)
     {
         _appointmentRepository = appointmentRepository;
+        _lifecyclePlanner = lifecyclePlanner;
         _unitOfWork = unitOfWork;
     }
 
@@ -20,6 +26,7 @@ public class MarkNoShowAppointmentCommandHandler : IRequestHandler<MarkNoShowApp
             ?? throw new KeyNotFoundException($"La cita con id {request.AppointmentId} no se encuentra.");
 
         appointment.MarkNoShow();
+        await _lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "AppointmentNoShow", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

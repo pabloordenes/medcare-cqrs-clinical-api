@@ -6,6 +6,8 @@ using MassTransit;
 using MedCareOS.Api.BackgroundServices;
 using MedCareOS.Api.Security;
 using MedCareOS.Application.Appointments.Consumers;
+using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Appointments.Workers;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
@@ -44,6 +46,8 @@ builder.Services.Configure<ScoringOptions>(
     builder.Configuration.GetSection(ScoringOptions.SectionName));
 builder.Services.Configure<ScoringRetryOptions>(
     builder.Configuration.GetSection(ScoringRetryOptions.SectionName));
+builder.Services.Configure<ScheduledActionsOptions>(
+    builder.Configuration.GetSection(ScheduledActionsOptions.SectionName));
 builder.Services.Configure<RabbitMqMessagingOptions>(
     builder.Configuration.GetSection(RabbitMqMessagingOptions.SectionName));
 builder.Services.Configure<NotificationOptions>(
@@ -246,7 +250,10 @@ builder.Services.AddDbContext<MedCareOS.Infrastructure.Persistence.ApplicationDb
 // repositorios & unit of work
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<IAppointmentScheduledActionRepository, AppointmentScheduledActionRepository>();
 builder.Services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
+builder.Services.AddScoped<IAppointmentLifecyclePlanner, AppointmentLifecyclePlanner>();
+builder.Services.AddSingleton<IScheduledActionsProcessor, ScheduledActionsProcessor>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -329,6 +336,7 @@ builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
 builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
 builder.Services.AddHostedService<ScoringRetryBackgroundService>();
 builder.Services.AddHostedService<NotificationRetentionBackgroundService>();
+builder.Services.AddHostedService<ScheduledActionsWorker>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {

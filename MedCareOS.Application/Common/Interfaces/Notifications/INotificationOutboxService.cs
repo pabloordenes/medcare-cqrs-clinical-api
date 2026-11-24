@@ -31,4 +31,6 @@ public sealed record EnqueueNotificationRequest(
     string Locale,
     DateTimeOffset ScheduledFor,
     IReadOnlyDictionary<string, string> Parameters,
-    Guid CorrelationId);
+    Guid CorrelationId,
+    NotificationChannel? ChannelOverride = null,
+    bool ForceImmediateDispatch = false);
