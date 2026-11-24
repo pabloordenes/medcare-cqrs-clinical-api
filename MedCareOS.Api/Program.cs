@@ -49,6 +49,8 @@ builder.Services.Configure<NotificationOptions>(
     builder.Configuration.GetSection(NotificationOptions.SectionName));
 builder.Services.Configure<ResendOptions>(
     builder.Configuration.GetSection(ResendOptions.SectionName));
+builder.Services.Configure<MetaWhatsAppOptions>(
+    builder.Configuration.GetSection(MetaWhatsAppOptions.SectionName));
 
 var notificationOptions = builder.Configuration
     .GetSection(NotificationOptions.SectionName)
@@ -265,6 +267,13 @@ builder.Services.AddHttpClient<ResendEmailNotificationChannel>((serviceProvider,
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
 });
 builder.Services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<ResendEmailNotificationChannel>());
+builder.Services.AddHttpClient<MetaWhatsAppNotificationChannel>((serviceProvider, client) =>
+{
+    var waOptions = serviceProvider.GetRequiredService<IOptions<MetaWhatsAppOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(waOptions.BaseUrl) ? "https://graph.facebook.com/" : waOptions.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+});
+builder.Services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<MetaWhatsAppNotificationChannel>());
 builder.Services.AddScoped<INotificationChannelResolver, NotificationChannelResolver>();
 builder.Services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
 builder.Services.AddScoped<INotificationOutboxService, NotificationOutboxService>();
