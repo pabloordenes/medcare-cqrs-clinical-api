@@ -42,8 +42,8 @@ public class GetDailyAppointmentsQueryHandler : IRequestHandler<GetDailyAppointm
                 block.StartTime,
                 block.EndTime,
                 app.Status,
-                app.NlpSummary,
-                app.RiskBand
+                app.NlpStatus == NlpStatus.Completed ? app.NlpSummary : null,
+                app.ScoringStatus == ScoringStatus.Scored ? app.RiskBand : null
             )
         ).AsNoTracking().ToListAsync(cancellationToken);
 

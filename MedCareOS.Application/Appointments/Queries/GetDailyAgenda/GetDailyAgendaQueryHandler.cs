@@ -42,7 +42,7 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
                     activeApp != null ? "ocupada" : "libre",
                     activeApp != null ? activeApp.Id : null,
                     patient != null ? patient.FirstName + " " + patient.LastName : null,
-                    activeApp != null ? activeApp.NlpSummary : null
+                    activeApp != null && activeApp.NlpStatus == NlpStatus.Completed ? activeApp.NlpSummary : null
                     )
                 )
                 .AsNoTracking()

@@ -246,11 +246,28 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LastScoringError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("last_scoring_error");
+
+                    b.Property<DateTimeOffset?>("NextScoringRetryAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_scoring_retry_at");
+
+                    b.Property<string>("NlpStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("nlp_status");
+
                     b.Property<string>("NlpSummary")
                         .HasColumnType("text")
                         .HasColumnName("resumen_nlp");
 
-                    b.Property<decimal>("NoShowRiskScore")
+                    b.Property<decimal?>("NoShowRiskScore")
                         .HasColumnType("numeric(5,4)")
                         .HasColumnName("score_riesgo");
 
@@ -274,6 +291,24 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("fuente_agendamiento");
 
+                    b.Property<DateTimeOffset?>("ScoredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scored_at");
+
+                    b.Property<int>("ScoringAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("scoring_attempts");
+
+                    b.Property<string>("ScoringStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("scoring_status");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -295,6 +330,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_citas_schedule_block_id")
                         .HasFilter("estado <> 'Cancelled'");
+
+                    b.HasIndex("ScoringStatus", "NlpStatus", "NextScoringRetryAt")
+                        .HasDatabaseName("IX_citas_scoring_retry")
+                        .HasFilter("estado IN ('Scheduled', 'Confirmed') AND (scoring_status <> 'Scored' OR nlp_status IN ('Pending', 'Failed'))");
 
                     b.ToTable("citas", (string)null);
                 });

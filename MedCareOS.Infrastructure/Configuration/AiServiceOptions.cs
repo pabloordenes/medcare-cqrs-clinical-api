@@ -10,4 +10,5 @@ public class AiServiceOptions
     public string Role { get; set; } = string.Empty;
     public string PrivateKeyPath { get; set; } = string.Empty;
     public string PrivateKeyContent { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 30;
 }

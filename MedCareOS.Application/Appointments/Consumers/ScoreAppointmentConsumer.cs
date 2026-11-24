@@ -23,6 +23,7 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
     private readonly IAiClinicalService _aiClinicalService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ScoringOptions _scoringOptions;
+    private readonly ScoringRetryOptions _retryOptions;
     private readonly ILogger<ScoreAppointmentConsumer> _logger;
 
     public ScoreAppointmentConsumer(
@@ -33,6 +34,7 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
         IAiClinicalService aiClinicalService,
         IUnitOfWork unitOfWork,
         IOptions<ScoringOptions> scoringOptions,
+        IOptions<ScoringRetryOptions> retryOptions,
         ILogger<ScoreAppointmentConsumer> logger)
     {
         _appointmentRepository = appointmentRepository;
@@ -42,6 +44,7 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
         _aiClinicalService = aiClinicalService;
         _unitOfWork = unitOfWork;
         _scoringOptions = scoringOptions.Value;
+        _retryOptions = retryOptions.Value;
         _logger = logger;
     }
 
@@ -68,6 +71,20 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
             return;
         }
 
+        bool needsNlp = appointment.NlpStatus is NlpStatus.Pending or NlpStatus.Failed
+                        && !string.IsNullOrWhiteSpace(appointment.SymptomsRaw);
+        bool needsPredict = appointment.ScoringStatus is ScoringStatus.Pending or ScoringStatus.Failed;
+
+        if (!needsNlp && !needsPredict)
+        {
+            _logger.LogInformation(
+                "Cita {AppointmentId} ya tiene NLP ({NlpStatus}) y Scoring ({ScoringStatus}) resueltos. No-op.",
+                appointmentId,
+                appointment.NlpStatus,
+                appointment.ScoringStatus);
+            return;
+        }
+
         var patient = await _patientRepository.GetPatientByIdAsync(appointment.PatientId, cancellationToken)
             ?? throw new KeyNotFoundException($"No se encontró el paciente {appointment.PatientId} para la cita {appointmentId}.");
 
@@ -77,61 +94,79 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
         var staff = await _staffRepository.GetByIdAsync(scheduleBlock.StaffId, cancellationToken)
             ?? throw new KeyNotFoundException($"No se encontró el profesional {scheduleBlock.StaffId} para la cita {appointmentId}.");
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        int age = today.Year - patient.DateOfBirth.Year;
-        if (patient.DateOfBirth > today.AddYears(-age)) age--;
-
-        int daysOfWaiting = (scheduleBlock.StartTime.Date - DateTime.UtcNow.Date).Days;
-        if (daysOfWaiting < 0) daysOfWaiting = 0;
-
-        int previousAbsences = await _appointmentRepository.GetNoShowCountByPatientId(appointment.PatientId, cancellationToken);
         string specialtyNormalized = staff.Specialty?.Trim().ToLowerInvariant().Replace(" ", "_") ?? "medicina_general";
 
-        var predictRequest = new PredictRequestDto(
-            appointmentId,
-            age,
-            patient.Gender,
-            daysOfWaiting,
-            specialtyNormalized,
-            previousAbsences,
-            "ninguno");
+        Task<(NlpSummaryResponseDto? Result, Exception? Error)> nlpTask = needsNlp
+            ? ExecuteSafelyAsync(() => _aiClinicalService.GetNlpSummaryAsync(appointmentId, appointment.SymptomsRaw, cancellationToken))
+            : Task.FromResult<(NlpSummaryResponseDto?, Exception?)>((null, null));
 
-        var nlpTask = _aiClinicalService.GetNlpSummaryAsync(appointmentId, appointment.SymptomsRaw, cancellationToken);
-        var predictTask = _aiClinicalService.PredictNoShowRiskAsync(predictRequest, cancellationToken);
+        Task<(PredictResponseDto? Result, Exception? Error)> predictTask = needsPredict
+            ? ExecutePredictAsync(appointment.Id, appointment.PatientId, patient, scheduleBlock, specialtyNormalized, cancellationToken)
+            : Task.FromResult<(PredictResponseDto?, Exception?)>((null, null));
 
-        try
+        await Task.WhenAll(nlpTask, predictTask);
+
+        var (nlpResult, nlpError) = await nlpTask;
+        var (predictResult, predictError) = await predictTask;
+
+        if (nlpResult is not null)
         {
-            await Task.WhenAll(nlpTask, predictTask);
-        }
-        catch
-        {
-            var nlpFault = nlpTask.Exception?.InnerException;
-            var predictFault = predictTask.Exception?.InnerException;
-
-            if (nlpFault is AiServicePermanentException)
-                ExceptionDispatchInfo.Capture(nlpFault).Throw();
-            if (predictFault is AiServicePermanentException)
-                ExceptionDispatchInfo.Capture(predictFault).Throw();
-
-            throw;
+            string processedSymptomsJson = JsonSerializer.Serialize(nlpResult.ExtractedSymptoms);
+            appointment.ApplyNlpAnalysis(nlpResult.Summary, processedSymptomsJson);
         }
 
-        var nlpResult = await nlpTask;
-        var predictResult = await predictTask;
+        if (predictResult is not null)
+        {
+            appointment.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
+        }
 
-        string processedSymptomsJson = JsonSerializer.Serialize(nlpResult.ExtractedSymptoms);
-        appointment.ApplyNlpAnalysis(nlpResult.Summary, processedSymptomsJson);
-        appointment.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
+        if (nlpError is not null || predictError is not null)
+        {
+            var utcNow = DateTimeOffset.UtcNow;
+            var permanentException = FindPermanentException(predictError, nlpError);
+            var combinedError = BuildCombinedError(predictError, nlpError);
+
+            if (permanentException is not null)
+            {
+                appointment.MarkScoringTerminalFailure(
+                    combinedError,
+                    utcNow,
+                    scoringFailed: predictError is not null,
+                    nlpFailed: nlpError is not null);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                ExceptionDispatchInfo.Capture(permanentException).Throw();
+            }
+
+            var nextAttempt = appointment.ScoringAttempts + 1;
+            var backoff = _retryOptions.ComputeBackoff(nextAttempt);
+
+            appointment.RecordScoringFailure(
+                combinedError,
+                _retryOptions.MaxAttempts,
+                utcNow,
+                backoff,
+                scoringFailed: predictError is not null,
+                nlpFailed: nlpError is not null);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var transientException = predictError ?? nlpError!;
+            ExceptionDispatchInfo.Capture(transientException).Throw();
+        }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Scoring y análisis NLP completados para la cita {AppointmentId}. Score={Score}, Band={Band}",
+            "Análisis IA completado para cita {AppointmentId}. ScoringStatus={ScoringStatus}, NlpStatus={NlpStatus}, Score={Score}, Band={Band}",
             appointmentId,
-            predictResult.RiskScore,
-            predictResult.RiskBand);
+            appointment.ScoringStatus,
+            appointment.NlpStatus,
+            appointment.NoShowRiskScore,
+            appointment.RiskBand);
 
-        if (_scoringOptions.PublishAnomalyOnCreate &&
+        if (predictResult is not null &&
+            _scoringOptions.PublishAnomalyOnCreate &&
             (predictResult.RiskBand == RiskThresholds.HighRiskBand || predictResult.RiskScore >= RiskThresholds.ModerateRiskMin))
         {
             await context.Publish(
@@ -148,5 +183,65 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
                     }),
                 cancellationToken);
         }
+    }
+
+    private async Task<(PredictResponseDto? Result, Exception? Error)> ExecutePredictAsync(
+        Guid appointmentId,
+        Guid patientId,
+        Domain.Entities.Patient patient,
+        Domain.Entities.ScheduleBlock scheduleBlock,
+        string specialtyNormalized,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        int age = today.Year - patient.DateOfBirth.Year;
+        if (patient.DateOfBirth > today.AddYears(-age)) age--;
+
+        int daysOfWaiting = (scheduleBlock.StartTime.Date - DateTime.UtcNow.Date).Days;
+        if (daysOfWaiting < 0) daysOfWaiting = 0;
+
+        int previousAbsences = await _appointmentRepository.GetNoShowCountByPatientId(patientId, cancellationToken);
+
+        var predictRequest = new PredictRequestDto(
+            appointmentId,
+            age,
+            patient.Gender,
+            daysOfWaiting,
+            specialtyNormalized,
+            previousAbsences,
+            "ninguno");
+
+        return await ExecuteSafelyAsync(() => _aiClinicalService.PredictNoShowRiskAsync(predictRequest, cancellationToken));
+    }
+
+    private static async Task<(T? Result, Exception? Error)> ExecuteSafelyAsync<T>(Func<Task<T>> action)
+        where T : class
+    {
+        try
+        {
+            var result = await action();
+            return (result, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex);
+        }
+    }
+
+    private static Exception? FindPermanentException(params Exception?[] errors)
+    {
+        foreach (var err in errors)
+        {
+            if (err is AiServicePermanentException or ArgumentException or JsonException or KeyNotFoundException or InvalidOperationException)
+                return err;
+        }
+        return null;
+    }
+
+    private static string BuildCombinedError(Exception? predictError, Exception? nlpError)
+    {
+        if (predictError is not null && nlpError is not null)
+            return $"Predict: {predictError.Message} | NLP: {nlpError.Message}";
+        return predictError?.Message ?? nlpError?.Message ?? "Error desconocido";
     }
 }
