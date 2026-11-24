@@ -462,21 +462,60 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("barrio");
 
+                    b.Property<DateTimeOffset?>("OptOutAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opt_out_at");
+
+                    b.Property<string>("OptOutSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("opt_out_source");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("telefono");
+
+                    b.Property<string>("PreferredChannel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Email")
+                        .HasColumnName("canal_preferido");
 
                     b.Property<string>("Rut")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("rut");
 
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("usuario_id");
 
+                    b.Property<bool>("WhatsAppOptIn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("whatsapp_opt_in");
+
+                    b.Property<DateTimeOffset?>("WhatsAppOptInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("whatsapp_opt_in_at");
+
+                    b.Property<string>("WhatsAppOptInSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("whatsapp_opt_in_source");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Phone")
+                        .HasDatabaseName("IX_pacientes_telefono");
 
                     b.HasIndex("Rut")
                         .IsUnique();

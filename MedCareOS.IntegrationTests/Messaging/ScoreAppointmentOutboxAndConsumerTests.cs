@@ -263,6 +263,45 @@ public class ScoreAppointmentOutboxAndConsumerTests
         inboxRecords[0].Status.Should().Be(ProcessedMessage.StatusCompleted);
     }
 
+    [Theory]
+    [InlineData("WhatsApp", true, false, "whatsapp")]
+    [InlineData("Email", false, false, "email")]
+    [InlineData("WhatsApp", true, true, "ninguno")]
+    public async Task ScoreAppointmentConsumer_ShouldForwardRealPatientReminderChannelToPredict(
+        string preferredChannelName,
+        bool whatsAppOptIn,
+        bool optedOut,
+        string expectedReminderChannel)
+    {
+        string? capturedReminderChannel = null;
+        var fakeAi = new ProgrammableAiClinicalService(
+            onNlp: (_, _, _) => Task.FromResult(new NlpSummaryResponseDto("Control", [], "baja")),
+            onPredict: (req, _) =>
+            {
+                capturedReminderChannel = req.ReminderChannel;
+                return Task.FromResult(new PredictResponseDto(req.AppointmentId, 0.25m, "Bajo", "asiste"));
+            });
+
+        await using var ctx = await TestHarnessHost.CreateAsync(fakeAi);
+        var preferredChannel = Enum.Parse<NotificationChannel>(preferredChannelName);
+        var appointmentId = await ctx.SeedAppointmentAsync(
+            "Control preventivo",
+            configurePatient: p =>
+            {
+                p.UpdateNotificationPreferences(preferredChannel, whatsAppOptIn, "test_seed", DateTimeOffset.UtcNow);
+                if (optedOut)
+                    p.OptOut("test_opt_out", DateTimeOffset.UtcNow);
+            });
+
+        await ctx.Harness.Bus.Publish(new AppointmentCreated(appointmentId, DateTimeOffset.UtcNow, Guid.NewGuid()));
+
+        var consumerHarness = ctx.Harness.GetConsumerHarness<ScoreAppointmentConsumer>();
+        (await consumerHarness.Consumed.Any<AppointmentCreated>(c => c.Context.Message.AppointmentId == appointmentId))
+            .Should().BeTrue();
+
+        capturedReminderChannel.Should().Be(expectedReminderChannel);
+    }
+
     private sealed class ProgrammableAiClinicalService : IAiClinicalService
     {
         private readonly Func<Guid, string, CancellationToken, Task<NlpSummaryResponseDto>> _onNlp;
@@ -438,7 +477,7 @@ public class ScoreAppointmentOutboxAndConsumerTests
             return new TestHarnessHost(provider, harness, alertSink, receivedObserver, scheduler);
         }
 
-        public async Task<Guid> SeedAppointmentAsync(string symptomsRaw)
+        public async Task<Guid> SeedAppointmentAsync(string symptomsRaw, Action<Patient>? configurePatient = null)
         {
             using var scope = Provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -446,7 +485,8 @@ public class ScoreAppointmentOutboxAndConsumerTests
             var staffUser = User.Create(Guid.NewGuid(), $"doc_{Guid.NewGuid():N}@test.cl", UserRole.Medico);
             var patientUser = User.Create(Guid.NewGuid(), $"pat_{Guid.NewGuid():N}@test.cl", UserRole.Paciente);
             var staff = Staff.Create(staffUser.Id, "Dr", "Test", $"{Random.Shared.Next(10000000, 99999999)}-1", "Medicina General", "Medico", "+56911111111");
-            var patient = Patient.Create(patientUser.Id, $"{Random.Shared.Next(10000000, 99999999)}-2", "Ana", "Lopez", new DateOnly(1992, 3, 15), "femenino", "+56922222222");
+            var patient = Patient.Create(patientUser.Id, $"{Random.Shared.Next(10000000, 99999999)}-2", "Ana", "Lopez", new DateOnly(1992, 3, 15), "femenino", "+56922222222", email: "ana@test.cl");
+            configurePatient?.Invoke(patient);
             var box = Box.Create($"Box_{Guid.NewGuid():N}", "Consulta", 1, "1");
             var start = DateTime.UtcNow.AddDays(2);
             var block = ScheduleBlock.Create(

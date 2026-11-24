@@ -8,5 +8,5 @@ public interface IPatientRepository
     Task<bool> ExistsByRutAsync(string rut, CancellationToken cancellationToken = default);
     void Add(Patient patient);
     Task<Patient?> GetByUserId(Guid userId, CancellationToken cancellationToken = default);
-    
+    Task<Patient?> GetByNormalizedPhoneAsync(string phone, CancellationToken cancellationToken = default);
 }
