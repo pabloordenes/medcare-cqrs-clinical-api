@@ -47,6 +47,8 @@ builder.Services.Configure<RabbitMqMessagingOptions>(
     builder.Configuration.GetSection(RabbitMqMessagingOptions.SectionName));
 builder.Services.Configure<NotificationOptions>(
     builder.Configuration.GetSection(NotificationOptions.SectionName));
+builder.Services.Configure<ResendOptions>(
+    builder.Configuration.GetSection(ResendOptions.SectionName));
 
 var notificationOptions = builder.Configuration
     .GetSection(NotificationOptions.SectionName)
@@ -256,6 +258,13 @@ builder.Services.AddScoped<IApplicationDbContext>(sp =>
 builder.Services.AddSingleton<IFakeNotificationStore, InMemoryFakeNotificationStore>();
 builder.Services.AddScoped<INotificationChannel, FakeEmailNotificationChannel>();
 builder.Services.AddScoped<INotificationChannel, FakeWhatsAppNotificationChannel>();
+builder.Services.AddHttpClient<ResendEmailNotificationChannel>((serviceProvider, client) =>
+{
+    var resendOptions = serviceProvider.GetRequiredService<IOptions<ResendOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(resendOptions.BaseUrl) ? "https://api.resend.com/" : resendOptions.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+});
+builder.Services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<ResendEmailNotificationChannel>());
 builder.Services.AddScoped<INotificationChannelResolver, NotificationChannelResolver>();
 builder.Services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
 builder.Services.AddScoped<INotificationOutboxService, NotificationOutboxService>();
