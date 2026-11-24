@@ -12,6 +12,7 @@ public interface IApplicationDbContext
     DbSet<Box> Boxes { get; }
     DbSet<User> Users { get; }
     DbSet<AiResolutionTask> AiResolutionTasks { get; }
+    DbSet<ReceptionTask> ReceptionTasks { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; }
     DbSet<ProcessedMessage> ProcessedMessages { get; }
