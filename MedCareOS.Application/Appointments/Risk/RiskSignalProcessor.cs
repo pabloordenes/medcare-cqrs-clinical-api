@@ -1,6 +1,8 @@
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
+using MedCareOS.Domain.Services;
 
 namespace MedCareOS.Application.Appointments.Risk;
 
@@ -10,17 +12,20 @@ public class RiskSignalProcessor : IRiskSignalProcessor
     private readonly IAppointmentRepository _appointmentRepository;
     private readonly ITenantConfirmationPolicyRepository _policyRepository;
     private readonly IReceptionTaskRepository _receptionTaskRepository;
+    private readonly IOmroAnomalyPublisher _anomalyPublisher;
 
     public RiskSignalProcessor(
         IRiskSignalRepository riskSignalRepository,
         IAppointmentRepository appointmentRepository,
         ITenantConfirmationPolicyRepository policyRepository,
-        IReceptionTaskRepository receptionTaskRepository)
+        IReceptionTaskRepository receptionTaskRepository,
+        IOmroAnomalyPublisher anomalyPublisher)
     {
         _riskSignalRepository = riskSignalRepository;
         _appointmentRepository = appointmentRepository;
         _policyRepository = policyRepository;
         _receptionTaskRepository = receptionTaskRepository;
+        _anomalyPublisher = anomalyPublisher;
     }
 
     public async Task<RiskSignalApplicationResult> RecordAsync(
@@ -88,6 +93,21 @@ public class RiskSignalProcessor : IRiskSignalProcessor
 
         var (previousBand, newBand) = appointment.RecalculateEffectiveRisk(merged, policy, request.OccurredAtUtc);
 
+        bool riskEscalatedPublished = false;
+        if (!request.SuppressBandEscalationEvent &&
+            RiskEscalationPolicy.ShouldEmitRiskEscalated(appointment, previousBand, newBand))
+        {
+            riskEscalatedPublished = await _anomalyPublisher.PublishAsync(
+                new PublishAnomalyContext(
+                    Appointment: appointment,
+                    AnomalyType: RiskThresholds.RiskEscalatedAnomalyType,
+                    CorrelationId: request.CorrelationId,
+                    OccurredAtUtc: request.OccurredAtUtc,
+                    TriggerSource: request.Source,
+                    PreviousBand: previousBand),
+                cancellationToken);
+        }
+
         bool receptionTaskCreated = false;
         if (request.Kind == RiskSignalKind.DeliveryFailed && request.CreateFailedDeliveryReceptionTask)
         {
@@ -122,7 +142,8 @@ public class RiskSignalProcessor : IRiskSignalProcessor
             NewEffectiveScore: appointment.EffectiveRiskScore,
             PreviousBand: previousBand,
             NewBand: newBand,
-            ReceptionTaskCreated: receptionTaskCreated);
+            ReceptionTaskCreated: receptionTaskCreated,
+            RiskEscalatedEventPublished: riskEscalatedPublished);
     }
 
     private static decimal ResolvePolicyWeight(RiskSignalKind kind, TenantConfirmationPolicy policy) => kind switch

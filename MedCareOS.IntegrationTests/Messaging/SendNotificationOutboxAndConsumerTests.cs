@@ -438,11 +438,14 @@ public class SendNotificationOutboxAndConsumerTests
 
             services.AddScoped<IAppointmentRepository, AppointmentRepository>();
             services.AddScoped<IPatientRepository, PatientRepository>();
+            services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+            services.AddScoped<IStaffRepository, StaffRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();
             services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
             services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
             services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+            services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
             services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IMessageInboxStore, EfMessageInboxStore>();

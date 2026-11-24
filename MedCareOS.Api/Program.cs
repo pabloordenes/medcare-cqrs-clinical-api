@@ -257,6 +257,7 @@ builder.Services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
 builder.Services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
 builder.Services.AddScoped<IAppointmentLifecyclePlanner, AppointmentLifecyclePlanner>();
 builder.Services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
+builder.Services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
 builder.Services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
 builder.Services.AddSingleton<IScheduledActionsProcessor, ScheduledActionsProcessor>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();

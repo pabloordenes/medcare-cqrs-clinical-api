@@ -5,9 +5,11 @@ using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
 using MedCareOS.Application.Notifications.Services;
 using MedCareOS.Application.Notifications.Templates;
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
+using MedCareOS.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -117,6 +119,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             var riskSignalProcessor = scope.ServiceProvider.GetRequiredService<IRiskSignalProcessor>();
             var riskSignalRepository = scope.ServiceProvider.GetRequiredService<IRiskSignalRepository>();
             var rescoreService = scope.ServiceProvider.GetRequiredService<IAppointmentRescoreService>();
+            var anomalyPublisher = scope.ServiceProvider.GetRequiredService<IOmroAnomalyPublisher>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var action = await actionRepository.GetByIdAsync(claimedItem.Id, cancellationToken);
@@ -209,6 +212,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                         riskSignalProcessor,
                         riskSignalRepository,
                         rescoreService,
+                        anomalyPublisher,
                         now,
                         cancellationToken);
                     break;
@@ -233,9 +237,13 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                     await ExecuteConfirmationDeadlineAsync(
                         action,
                         appointment,
+                        patient,
+                        block,
+                        staff,
                         policy,
                         notificationRepository,
                         riskSignalProcessor,
+                        anomalyPublisher,
                         now,
                         cancellationToken);
                     break;
@@ -328,9 +336,12 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         IRiskSignalProcessor riskSignalProcessor,
         IRiskSignalRepository riskSignalRepository,
         IAppointmentRescoreService rescoreService,
+        IOmroAnomalyPublisher anomalyPublisher,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        var bandBeforeReminder2 = appointment.EffectiveBand;
+
         var previousReminder = await notificationRepository.GetLatestByAppointmentAndTypeAsync(
             appointment.Id,
             NotificationType.Reminder,
@@ -343,6 +354,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             action,
             now,
             riskSignalProcessor,
+            suppressBandEscalationEvent: true,
             cancellationToken);
 
         bool rescored = false;
@@ -383,11 +395,12 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                             daysOfWaiting,
                             previousAbsences,
                             channel = patient.ToPredictReminderChannel()
-                        })),
+                        }),
+                        SuppressBandEscalationEvent: true),
                     cancellationToken);
 
                 var allSignals = await riskSignalRepository.GetByAppointmentIdAsync(appointment.Id, cancellationToken);
-                appointment.ApplyModelRescore(predictResult.RiskScore, allSignals, policy, now);
+                appointment.ApplyModelRescore(predictResult.RiskScore, allSignals, policy, now, bandBeforeReminder2);
                 rescored = true;
             }
             catch (Exception ex) when (IsTransientAiFailure(ex))
@@ -413,6 +426,23 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                     "Re-score T-48h omitido por error permanente de IA para cita {AppointmentId}. Se continúa con Reminder 2.",
                     appointment.Id);
             }
+        }
+
+        bool riskEscalatedPublished = false;
+        if (RiskEscalationPolicy.ShouldEmitRiskEscalated(appointment, bandBeforeReminder2, appointment.EffectiveBand))
+        {
+            riskEscalatedPublished = await anomalyPublisher.PublishAsync(
+                new PublishAnomalyContext(
+                    Appointment: appointment,
+                    AnomalyType: RiskThresholds.RiskEscalatedAnomalyType,
+                    CorrelationId: action.CorrelationId,
+                    OccurredAtUtc: now,
+                    TriggerSource: $"scheduled_action:{action.Kind}",
+                    PreviousBand: bandBeforeReminder2,
+                    Patient: patient,
+                    ScheduleBlock: block,
+                    Staff: staff),
+                cancellationToken);
         }
 
         var targetChannel = previousReminder is not null
@@ -447,7 +477,8 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             rescoreSkipped,
             rescoreError,
             effectiveScore = appointment.EffectiveRiskScore,
-            effectiveBand = appointment.EffectiveBand?.ToString()
+            effectiveBand = appointment.EffectiveBand?.ToString(),
+            riskEscalatedPublished
         }));
     }
 
@@ -477,6 +508,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             action,
             now,
             riskSignalProcessor,
+            suppressBandEscalationEvent: false,
             cancellationToken);
 
         var allActions = await actionRepository.GetByAppointmentIdAsync(appointment.Id, cancellationToken);
@@ -525,9 +557,13 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
     private static async Task ExecuteConfirmationDeadlineAsync(
         AppointmentScheduledAction action,
         Appointment appointment,
+        Patient patient,
+        ScheduleBlock block,
+        Staff staff,
         TenantConfirmationPolicy policy,
         INotificationRepository notificationRepository,
         IRiskSignalProcessor riskSignalProcessor,
+        IOmroAnomalyPublisher anomalyPublisher,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -543,14 +579,35 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             action,
             now,
             riskSignalProcessor,
+            suppressBandEscalationEvent: true,
             cancellationToken);
 
-        appointment.MarkUnresponsive(now);
+        var transition = appointment.MarkUnresponsive(now);
+
+        bool deadlineMissedPublished = false;
+        if (RiskEscalationPolicy.ShouldEmitConfirmationDeadlineMissed(appointment, transition.StateChanged))
+        {
+            deadlineMissedPublished = await anomalyPublisher.PublishAsync(
+                new PublishAnomalyContext(
+                    Appointment: appointment,
+                    AnomalyType: RiskThresholds.ConfirmationDeadlineMissedAnomalyType,
+                    CorrelationId: action.CorrelationId,
+                    OccurredAtUtc: now,
+                    TriggerSource: $"scheduled_action:{action.Kind}",
+                    PreviousBand: appointment.EffectiveBand,
+                    Patient: patient,
+                    ScheduleBlock: block,
+                    Staff: staff),
+                cancellationToken);
+        }
 
         action.MarkCompleted(now, JsonSerializer.Serialize(new
         {
             confirmationState = appointment.ConfirmationState.ToString(),
-            deadlineMissedAt = appointment.DeadlineMissedAt
+            deadlineMissedAt = appointment.DeadlineMissedAt,
+            effectiveScore = appointment.EffectiveRiskScore,
+            effectiveBand = appointment.EffectiveBand?.ToString(),
+            deadlineMissedPublished
         }));
     }
 
@@ -561,6 +618,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         AppointmentScheduledAction action,
         DateTimeOffset now,
         IRiskSignalProcessor riskSignalProcessor,
+        bool suppressBandEscalationEvent,
         CancellationToken cancellationToken)
     {
         if (previousNotification is null)
@@ -590,7 +648,8 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                     notificationType = previousNotification.Type.ToString(),
                     notificationStatus = previousNotification.Status.ToString(),
                     channel = previousNotification.Channel.ToString()
-                })),
+                }),
+                SuppressBandEscalationEvent: suppressBandEscalationEvent),
             cancellationToken);
     }
 

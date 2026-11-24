@@ -185,11 +185,14 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
 
         if (predictResult is not null &&
             _scoringOptions.PublishAnomalyOnCreate &&
+            !appointment.OrchestrationSuppressed &&
+            !appointment.IsPatientConfirmed &&
+            appointment.Status == AppointmentStatus.Scheduled &&
             (predictResult.RiskBand == RiskThresholds.HighRiskBand || predictResult.RiskScore >= RiskThresholds.ModerateRiskMin))
         {
             await context.Publish(
                 new AnomalyDetected(
-                    TenantId: RiskThresholds.DefaultTenantId,
+                    TenantId: appointment.TenantId,
                     CorrelationId: context.Message.CorrelationId,
                     AnomalyType: RiskThresholds.AppointmentNoShowAnomalyType,
                     ResourceId: appointmentId,

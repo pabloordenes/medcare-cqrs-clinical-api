@@ -382,6 +382,7 @@ public class ScheduledActionsWorkerIntegrationTests
             services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
             services.AddScoped<IAiResolutionSupersedingService, AiResolutionSupersedingService>();
             services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
+            services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
             services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
             services.AddScoped<IAiClinicalService, StubWorkerAiClinicalService>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();

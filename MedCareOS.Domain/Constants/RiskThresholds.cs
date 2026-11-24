@@ -13,4 +13,6 @@ public static class RiskThresholds
     public const string HighRiskBand = "Alto";
     public static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public const string AppointmentNoShowAnomalyType = "AppointmentNoShowRisk";
+    public const string RiskEscalatedAnomalyType = "RiskEscalated";
+    public const string ConfirmationDeadlineMissedAnomalyType = "ConfirmationDeadlineMissed";
 }

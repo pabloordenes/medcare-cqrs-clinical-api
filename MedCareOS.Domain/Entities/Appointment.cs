@@ -438,7 +438,8 @@ public class Appointment
         decimal rescoredModelScore,
         IEnumerable<RiskSignal> allSignals,
         TenantConfirmationPolicy policy,
-        DateTimeOffset utcNow)
+        DateTimeOffset utcNow,
+        RiskBandLevel? hysteresisBaseBand = null)
     {
         if (Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished)
             throw new InvalidOperationException("No se puede re-evaluar el riesgo en una cita inactiva o finalizada.");
@@ -462,13 +463,14 @@ public class Appointment
             LastScoringError = null;
         }
 
-        return RecalculateEffectiveRisk(allSignals, policy, utcNow);
+        return RecalculateEffectiveRisk(allSignals, policy, utcNow, hysteresisBaseBand);
     }
 
     public (RiskBandLevel? PreviousBand, RiskBandLevel? NewBand) RecalculateEffectiveRisk(
         IEnumerable<RiskSignal> allSignals,
         TenantConfirmationPolicy policy,
-        DateTimeOffset utcNow)
+        DateTimeOffset utcNow,
+        RiskBandLevel? hysteresisBaseBand = null)
     {
         ArgumentNullException.ThrowIfNull(allSignals);
         ArgumentNullException.ThrowIfNull(policy);
@@ -481,7 +483,7 @@ public class Appointment
             allSignals,
             policy.MaxReminderUnansweredCumulative);
 
-        var previousBand = EffectiveBand;
+        var previousBand = hysteresisBaseBand ?? EffectiveBand;
         var newBand = RiskBandEvaluator.Evaluate(effective, previousBand, policy.GetHysteresisThresholds());
 
         EffectiveRiskScore = effective;
