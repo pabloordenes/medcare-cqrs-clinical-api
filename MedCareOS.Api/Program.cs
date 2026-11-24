@@ -246,6 +246,7 @@ builder.Services.AddDbContext<MedCareOS.Infrastructure.Persistence.ApplicationDb
 // repositorios & unit of work
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();

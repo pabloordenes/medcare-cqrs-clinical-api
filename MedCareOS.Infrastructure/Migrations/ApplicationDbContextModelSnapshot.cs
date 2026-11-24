@@ -243,8 +243,33 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("asistio");
 
+                    b.Property<string>("ConfirmationOutcome")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("confirmation_outcome");
+
+                    b.Property<string>("ConfirmationState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("confirmation_state");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("DeadlineMissedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deadline_missed_at");
+
+                    b.Property<DateTimeOffset?>("FinalConfirmationRequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("final_confirmation_requested_at");
 
                     b.Property<string>("LastScoringError")
                         .HasMaxLength(500)
@@ -270,6 +295,12 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<decimal?>("NoShowRiskScore")
                         .HasColumnType("numeric(5,4)")
                         .HasColumnName("score_riesgo");
+
+                    b.Property<bool>("OrchestrationSuppressed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("orchestration_suppressed");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
@@ -319,6 +350,12 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("sintomas_texto");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("11111111-1111-1111-1111-111111111111"))
+                        .HasColumnName("tenant_id");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -334,6 +371,10 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasIndex("ScoringStatus", "NlpStatus", "NextScoringRetryAt")
                         .HasDatabaseName("IX_citas_scoring_retry")
                         .HasFilter("estado IN ('Scheduled', 'Confirmed') AND (scoring_status <> 'Scored' OR nlp_status IN ('Pending', 'Failed'))");
+
+                    b.HasIndex("TenantId", "ConfirmationOutcome", "ScoredAt")
+                        .HasDatabaseName("IX_citas_calibration_outcome")
+                        .HasFilter("confirmation_outcome IS NOT NULL");
 
                     b.ToTable("citas", (string)null);
                 });
@@ -1031,6 +1072,132 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("trabajadores", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.TenantConfirmationPolicy", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("AlternateChannelStrategy")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("alternate_channel_strategy");
+
+                    b.Property<bool>("CountSentAsDeliveredForUnanswered")
+                        .HasColumnType("boolean")
+                        .HasColumnName("count_sent_as_delivered_for_unanswered");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DeadlineOffsetHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("deadline_offset_hours");
+
+                    b.Property<bool>("EnableRescoreAtReminder2")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enable_rescore_at_reminder2");
+
+                    b.Property<int>("FinalConfirmationOffsetHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("final_confirmation_offset_hours");
+
+                    b.Property<decimal>("HighEnterThreshold")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("high_enter_threshold");
+
+                    b.Property<decimal>("HighExitThreshold")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("high_exit_threshold");
+
+                    b.Property<decimal>("MaxReminderUnansweredCumulative")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("max_reminder_unanswered_cumulative");
+
+                    b.Property<decimal>("MediumEnterThreshold")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("medium_enter_threshold");
+
+                    b.Property<decimal>("MediumExitThreshold")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("medium_exit_threshold");
+
+                    b.Property<int>("MinimumDelayAfterCreationMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minimum_delay_after_creation_minutes");
+
+                    b.Property<string>("PrimaryChannelStrategy")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("primary_channel_strategy");
+
+                    b.Property<TimeOnly?>("QuietHoursEndLocal")
+                        .HasColumnType("time")
+                        .HasColumnName("quiet_hours_end_local");
+
+                    b.Property<TimeOnly?>("QuietHoursStartLocal")
+                        .HasColumnType("time")
+                        .HasColumnName("quiet_hours_start_local");
+
+                    b.Property<int>("Reminder1OffsetHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder1_offset_hours");
+
+                    b.Property<int>("Reminder2OffsetHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder2_offset_hours");
+
+                    b.Property<int>("SameDayReminderMinLeadHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("same_day_reminder_min_lead_hours");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("timezone_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal>("WeightConfirmedEarly")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight_confirmed_early");
+
+                    b.Property<decimal>("WeightDeliveryFailed")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight_delivery_failed");
+
+                    b.Property<decimal>("WeightFinalConfirmed")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight_final_confirmed");
+
+                    b.Property<decimal>("WeightReminderUnanswered")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight_reminder_unanswered");
+
+                    b.Property<decimal>("WeightRepliedWithoutConfirmation")
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("weight_replied_without_confirmation");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("tenant_confirmation_policies", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_tenant_confirmation_policies_hysteresis", "medium_exit_threshold > 0 AND medium_exit_threshold < medium_enter_threshold AND medium_enter_threshold < high_exit_threshold AND high_exit_threshold < high_enter_threshold AND high_enter_threshold < 1");
+
+                            t.HasCheckConstraint("CK_tenant_confirmation_policies_offsets", "reminder1_offset_hours > reminder2_offset_hours AND reminder2_offset_hours > final_confirmation_offset_hours AND final_confirmation_offset_hours > deadline_offset_hours AND deadline_offset_hours > 0 AND minimum_delay_after_creation_minutes >= 0 AND same_day_reminder_min_lead_hours >= 0 AND same_day_reminder_min_lead_hours <= deadline_offset_hours");
+
+                            t.HasCheckConstraint("CK_tenant_confirmation_policies_quiet_hours", "(quiet_hours_start_local IS NULL AND quiet_hours_end_local IS NULL) OR (quiet_hours_start_local IS NOT NULL AND quiet_hours_end_local IS NOT NULL AND quiet_hours_start_local <> quiet_hours_end_local)");
+
+                            t.HasCheckConstraint("CK_tenant_confirmation_policies_weights", "weight_confirmed_early <= 0 AND weight_reminder_unanswered >= 0 AND max_reminder_unanswered_cumulative >= 0 AND weight_delivery_failed >= 0");
+                        });
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.User", b =>
