@@ -209,7 +209,7 @@ public class ScoreAppointmentConsumer : IConsumer<AppointmentCreated>
             daysOfWaiting,
             specialtyNormalized,
             previousAbsences,
-            "ninguno");
+            patient.ToPredictReminderChannel());
 
         return await ExecuteSafelyAsync(() => _aiClinicalService.PredictNoShowRiskAsync(predictRequest, cancellationToken));
     }
