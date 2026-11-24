@@ -158,7 +158,11 @@ public class AppointmentsController : ControllerBase
         return BadRequest("No se pudo generar el sobrecupo debido a datos inválidos o faltantes.");
     }
     
-    public record MonitorPayloadDto(Guid ResourceId, bool RequiresAction);
+    public record MonitorPayloadDto(
+        Guid ResourceId,
+        bool RequiresAction,
+        string? Reason = null,
+        ReceptionTaskPriority? Priority = null);
     
     [Authorize(Policy = "OmroService")]
     [TypeFilter(typeof(IdempotencyKeyFilter))]
@@ -166,11 +170,19 @@ public class AppointmentsController : ControllerBase
     public async Task<IActionResult> MonitorAppointmentWebhook([FromBody] MonitorPayloadDto payload, CancellationToken cancellationToken)
     {
         var command = new MonitorAppointmentCommand(
-            payload.ResourceId, 
-            payload.RequiresAction);
-    
-        await _sender.Send(command, cancellationToken);
+            payload.ResourceId,
+            payload.RequiresAction,
+            payload.Reason,
+            payload.Priority ?? ReceptionTaskPriority.High);
 
-        return Ok(new { message = "Cita puesta bajo monitoreo manual exitosamente. Notificación generada." });
+        try
+        {
+            await _sender.Send(command, cancellationToken);
+            return Ok(new { message = "Cita puesta bajo monitoreo manual exitosamente. Tarea de recepción generada." });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
     }
 }

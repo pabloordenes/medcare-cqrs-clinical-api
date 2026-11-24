@@ -1,5 +1,6 @@
-﻿using MedCareOS.Application.Interfaces;
-using MedCareOS.Domain.Entities;
+﻿using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,40 +8,69 @@ namespace MedCareOS.Application.Appointments.Commands.MonitorAppointment;
 
 public class MonitorAppointmentCommandHandler : IRequestHandler<MonitorAppointmentCommand>
 {
-    private const string ManualConfirmationNotificationType = "Confirmación Manual";
-    private readonly IApplicationDbContext _dbContext;
+    private const string DefaultManualConfirmationReason =
+        "Riesgo moderado detectado por IA. Contactar al paciente para re-confirmar asistencia.";
 
-    public MonitorAppointmentCommandHandler(IApplicationDbContext dbContext)
+    private readonly IAppointmentRepository _appointmentRepository;
+    private readonly IReceptionTaskRepository _receptionTaskRepository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public MonitorAppointmentCommandHandler(
+        IAppointmentRepository appointmentRepository,
+        IReceptionTaskRepository receptionTaskRepository,
+        IUnitOfWork unitOfWork)
     {
-        _dbContext = dbContext;
+        _appointmentRepository = appointmentRepository;
+        _receptionTaskRepository = receptionTaskRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task Handle(MonitorAppointmentCommand request, CancellationToken cancellationToken)
     {
-        var appointment = await _dbContext.Appointments.FindAsync(new object[] { request.ResourceId }, cancellationToken);
+        var appointment = await _appointmentRepository.GetAppointmentByIdAsync(request.ResourceId, cancellationToken);
 
         if (appointment == null)
             throw new KeyNotFoundException("La cita no existe.");
 
-        if (request.RequiresAction)
+        if (!request.RequiresAction)
+            return;
+
+        var alreadyExists = await _receptionTaskRepository.HasActiveTaskAsync(
+            appointment.Id,
+            ReceptionTaskType.ManualConfirmation,
+            cancellationToken);
+
+        if (alreadyExists)
+            return;
+
+        var reason = string.IsNullOrWhiteSpace(request.Reason)
+            ? DefaultManualConfirmationReason
+            : request.Reason.Trim();
+
+        var task = ReceptionTask.Create(
+            appointmentId: appointment.Id,
+            patientId: appointment.PatientId,
+            taskType: ReceptionTaskType.ManualConfirmation,
+            priority: request.Priority,
+            reason: reason);
+
+        await _receptionTaskRepository.AddAsync(task, cancellationToken);
+
+        try
         {
-            var alreadyExists = await _dbContext.Notifications.AnyAsync(
-                n => n.AppointmentId == appointment.Id && n.Type == ManualConfirmationNotificationType,
-                cancellationToken);
-
-            if (alreadyExists)
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            if (await _receptionTaskRepository.HasActiveTaskAsync(
+                    appointment.Id,
+                    ReceptionTaskType.ManualConfirmation,
+                    cancellationToken))
+            {
                 return;
+            }
 
-            var notification = Notification.Create(
-                appointmentId: appointment.Id,
-                patientId: appointment.PatientId,
-                type: ManualConfirmationNotificationType,
-                channel: "Teléfono/WhatsApp",
-                content: "Riesgo moderado detectado por IA. Contactar al paciente urgentemente para re-confirmar asistencia."
-            );
-
-            _dbContext.Notifications.Add(notification);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            throw;
         }
     }
 }
