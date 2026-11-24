@@ -381,44 +381,217 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("AppointmentId")
+                    b.Property<Guid?>("AppointmentId")
                         .HasColumnType("uuid")
                         .HasColumnName("cita_id");
 
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
                     b.Property<string>("Channel")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("canal");
 
                     b.Property<string>("Content")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("contenido");
 
+                    b.Property<DateTimeOffset?>("ContentRedactedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("content_redacted_at");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("correlation_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("CreatedAt");
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error");
+
+                    b.Property<DateTimeOffset?>("FailedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("failed_at");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("locale");
+
+                    b.Property<string>("OriginalChannel")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("canal_original");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("paciente_id");
 
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<string>("ProviderName")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("provider_name");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<DateTimeOffset>("ScheduledFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_for");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("estado");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("template_key");
+
+                    b.Property<string>("TemplateParamsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("template_params_json");
+
+                    b.Property<int>("TemplateVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("template_version");
+
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("11111111-1111-1111-1111-111111111111"))
+                        .HasColumnName("tenant_id");
 
                     b.Property<string>("Type")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
                         .HasColumnName("tipo");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AppointmentId");
-
                     b.HasIndex("PatientId");
 
+                    b.HasIndex("ProviderMessageId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_notificaciones_provider_message_id")
+                        .HasFilter("provider_message_id IS NOT NULL");
+
+                    b.HasIndex("ContentRedactedAt", "CreatedAt")
+                        .HasDatabaseName("IX_notificaciones_retention")
+                        .HasFilter("content_redacted_at IS NULL");
+
+                    b.HasIndex("Status", "ScheduledFor")
+                        .HasDatabaseName("IX_notificaciones_scheduled")
+                        .HasFilter("estado = 'Scheduled'");
+
+                    b.HasIndex("AppointmentId", "Type", "ScheduledFor")
+                        .IsUnique()
+                        .HasDatabaseName("UX_notificaciones_idempotency")
+                        .HasFilter("cita_id IS NOT NULL AND estado <> 'Cancelled'");
+
                     b.ToTable("notificaciones", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.NotificationTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BodyTemplate")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body_template");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("channel");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("locale");
+
+                    b.Property<string>("MetaTemplateName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("meta_template_name");
+
+                    b.Property<string>("SubjectTemplate")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("subject_template");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("template_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TemplateKey", "Channel", "Locale", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("UX_notification_templates_key");
+
+                    b.ToTable("notification_templates", (string)null);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.Patient", b =>
@@ -524,6 +697,77 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("pacientes", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.PatientActionToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActionScope")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("action_scope");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cita_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("NotificationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("notificacion_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("paciente_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("UsedAction")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("used_action");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_patient_action_tokens_expires_at");
+
+                    b.HasIndex("NotificationId");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_patient_action_tokens_hash");
+
+                    b.ToTable("patient_action_tokens", (string)null);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.ProcessedMessage", b =>
@@ -895,8 +1139,7 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
                         .WithMany()
                         .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("MedCareOS.Domain.Entities.Patient", null)
                         .WithMany()
@@ -910,6 +1153,26 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.User", null)
                         .WithOne()
                         .HasForeignKey("MedCareOS.Domain.Entities.Patient", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.PatientActionToken", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Notification", null)
+                        .WithMany()
+                        .HasForeignKey("NotificationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedCareOS.Domain.Entities.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

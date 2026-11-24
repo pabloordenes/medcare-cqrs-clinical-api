@@ -1,13 +1,18 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using MassTransit;
 using MedCareOS.Api.BackgroundServices;
 using MedCareOS.Api.Security;
 using MedCareOS.Application.Appointments.Consumers;
 using MedCareOS.Application.Common.Interfaces;
+using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Application.Notifications.Consumers;
+using MedCareOS.Application.Notifications.Services;
+using MedCareOS.Application.Notifications.Templates;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using MedCareOS.Infrastructure.Configuration;
@@ -15,11 +20,14 @@ using MedCareOS.Infrastructure.Messaging.Admin;
 using MedCareOS.Infrastructure.Messaging.Configuration;
 using MedCareOS.Infrastructure.Messaging.Consumers;
 using MedCareOS.Infrastructure.Messaging.Observers;
+using MedCareOS.Infrastructure.Notifications.Channels;
+using MedCareOS.Infrastructure.Notifications.Security;
 using MedCareOS.Infrastructure.Persistence;
 using MedCareOS.Infrastructure.Persistence.Repositories;
 using MedCareOS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -37,6 +45,12 @@ builder.Services.Configure<ScoringRetryOptions>(
     builder.Configuration.GetSection(ScoringRetryOptions.SectionName));
 builder.Services.Configure<RabbitMqMessagingOptions>(
     builder.Configuration.GetSection(RabbitMqMessagingOptions.SectionName));
+builder.Services.Configure<NotificationOptions>(
+    builder.Configuration.GetSection(NotificationOptions.SectionName));
+
+var notificationOptions = builder.Configuration
+    .GetSection(NotificationOptions.SectionName)
+    .Get<NotificationOptions>() ?? new NotificationOptions();
 
 var rabbitOptions = builder.Configuration
     .GetSection(RabbitMqMessagingOptions.SectionName)
@@ -61,6 +75,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.SetKebabCaseEndpointNameFormatter();
     x.AddConsumer<ScoreAppointmentConsumer, ScoreAppointmentConsumerDefinition>();
+    x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
 
     x.AddEntityFrameworkOutbox<ApplicationDbContext>(o =>
     {
@@ -233,8 +248,57 @@ builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
 builder.Services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
 builder.Services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();
 builder.Services.AddScoped<IApplicationDbContext>(sp => 
     sp.GetRequiredService<ApplicationDbContext>());
+
+builder.Services.AddSingleton<IFakeNotificationStore, InMemoryFakeNotificationStore>();
+builder.Services.AddScoped<INotificationChannel, FakeEmailNotificationChannel>();
+builder.Services.AddScoped<INotificationChannel, FakeWhatsAppNotificationChannel>();
+builder.Services.AddScoped<INotificationChannelResolver, NotificationChannelResolver>();
+builder.Services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
+builder.Services.AddScoped<INotificationOutboxService, NotificationOutboxService>();
+builder.Services.AddScoped<IPatientActionTokenService, PatientActionTokenService>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("ProviderWebhooks", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var limit = Math.Max(1, notificationOptions.RateLimiting.ProviderWebhooksPermitLimit);
+        var windowSeconds = Math.Max(1, notificationOptions.RateLimiting.ProviderWebhooksWindowSeconds);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"webhooks:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy("PublicPatientActions", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var limit = Math.Max(1, notificationOptions.RateLimiting.PublicActionsPermitLimit);
+        var windowSeconds = Math.Max(1, notificationOptions.RateLimiting.PublicActionsWindowSeconds);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"public_actions:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
 
 builder.Services.Configure<AiServiceOptions>(
     builder.Configuration.GetSection(AiServiceOptions.SectionName));
@@ -242,6 +306,7 @@ builder.Services.Configure<AiServiceOptions>(
 builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
 builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
 builder.Services.AddHostedService<ScoringRetryBackgroundService>();
+builder.Services.AddHostedService<NotificationRetentionBackgroundService>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {
@@ -271,6 +336,8 @@ app.UseHttpsRedirection();
 
 
 // IMPORTANTE: El orden de estos middlewares es crítico
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

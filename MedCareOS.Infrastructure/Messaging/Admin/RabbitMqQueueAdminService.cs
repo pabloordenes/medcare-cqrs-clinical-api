@@ -8,7 +8,7 @@ namespace MedCareOS.Infrastructure.Messaging.Admin;
 
 public class RabbitMqQueueAdminService : IRabbitMqQueueAdminService
 {
-    private static readonly string[] KnownQueues = ["score-appointment"];
+    private static readonly string[] KnownQueues = ["score-appointment", "send-notification"];
 
     private readonly RabbitMqMessagingOptions _options;
     private readonly ILogger<RabbitMqQueueAdminService> _logger;

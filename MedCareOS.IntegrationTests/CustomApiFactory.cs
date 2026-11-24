@@ -61,6 +61,9 @@ public class CustomApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("AiService:PrivateKeyContent", _omroTestRsa.ExportRSAPrivateKeyPem());
         builder.UseSetting("RabbitMq:RedeliveryMode", "None");
         builder.UseSetting("Scoring:PublishAnomalyOnCreate", "false");
+        builder.UseSetting("Notifications:ActionTokenSecret", "test-medcare-action-token-hmac-secret-at-least-32-chars");
+        builder.UseSetting("Notifications:EmailProvider", "Fake");
+        builder.UseSetting("Notifications:WhatsAppProvider", "Fake");
 
         builder.ConfigureServices(services =>
         {
