@@ -14,6 +14,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ScheduleBlock> ScheduleBlocks { get; set; }
     public DbSet<Box> Boxes { get; set; }
     public DbSet<Notification> Notifications { get; set; }
+    public DbSet<PatientActionToken> PatientActionTokens { get; set; }
+    public DbSet<NotificationTemplate> NotificationTemplates { get; set; }
     public DbSet<Staff> Staffs { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<WaitingList> WaitingLists { get; set; }

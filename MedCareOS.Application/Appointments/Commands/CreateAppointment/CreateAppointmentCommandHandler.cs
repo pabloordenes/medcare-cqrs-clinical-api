@@ -1,9 +1,16 @@
 ﻿using MassTransit;
 using MedCareOS.Application.Appointments.Events;
+using MedCareOS.Application.Common.Interfaces.Notifications;
+using MedCareOS.Application.Common.Options;
+using MedCareOS.Application.Notifications.Services;
+using MedCareOS.Application.Notifications.Templates;
+using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Exceptions;
 using MedCareOS.Domain.Repositories;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace MedCareOS.Application.Appointments.Commands.CreateAppointment;
 
@@ -15,6 +22,8 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly IScheduleBlockRepository _scheduleBlockRepository;
     private readonly IStaffRepository _staffRepository;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly INotificationOutboxService _notificationOutboxService;
+    private readonly NotificationOptions _notificationOptions;
 
     public CreateAppointmentCommandHandler(
         IAppointmentRepository appointmentRepository,
@@ -22,7 +31,9 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         IUnitOfWork unitOfWork,
         IScheduleBlockRepository scheduleBlockRepository,
         IStaffRepository staffRepository,
-        IPublishEndpoint publishEndpoint)
+        IPublishEndpoint publishEndpoint,
+        INotificationOutboxService notificationOutboxService,
+        IOptions<NotificationOptions> notificationOptions)
     {
         _appointmentRepository = appointmentRepository;
         _patientRepository = patientRepository;
@@ -30,6 +41,8 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         _scheduleBlockRepository = scheduleBlockRepository;
         _staffRepository = staffRepository;
         _publishEndpoint = publishEndpoint;
+        _notificationOutboxService = notificationOutboxService;
+        _notificationOptions = notificationOptions.Value;
     }
 
     public async Task<Guid> Handle(CreateAppointmentCommand request, CancellationToken cancellationToken)
@@ -67,14 +80,44 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
             request.SymptomsRaw,
             request.SchedulingSource);
 
-        // Persistencia atómica: cita + mensaje AppointmentCreated en la misma transacción vía Bus Outbox
+        var correlationId = Guid.NewGuid();
+        var (appointmentDate, appointmentTime) = NotificationFormattingHelper.FormatAppointmentDateTime(
+            scheduleBlock.StartTime,
+            _notificationOptions.TimeZoneId);
+        var specialtyDisplay = NotificationFormattingHelper.ResolveSpecialtyDisplay(
+            staff.Specialty,
+            _notificationOptions.IncludeSpecialtyInMessages,
+            _notificationOptions.SensitiveSpecialtiesExcluded);
+
+        // Persistencia atómica: cita + AppointmentCreated + notificación T0 en la misma transacción vía Bus Outbox
         await _appointmentRepository.AddAppointmentAsync(newAppointment, cancellationToken);
         await _publishEndpoint.Publish(
             new AppointmentCreated(
                 AppointmentId: newAppointment.Id,
-                OccurredAtUtc: DateTimeOffset.UtcNow,
-                CorrelationId: Guid.NewGuid()),
+                OccurredAtUtc: newAppointment.CreatedAt,
+                CorrelationId: correlationId),
             cancellationToken);
+
+        await _notificationOutboxService.EnqueueAsync(
+            new EnqueueNotificationRequest(
+                TenantId: RiskThresholds.DefaultTenantId,
+                AppointmentId: newAppointment.Id,
+                Patient: patient,
+                Type: NotificationType.AppointmentCreated,
+                TemplateKey: DefaultNotificationTemplateCatalog.Keys.AppointmentCreated,
+                Locale: DefaultNotificationTemplateCatalog.DefaultLocale,
+                ScheduledFor: newAppointment.CreatedAt,
+                Parameters: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["patientFirstName"] = patient.FirstName,
+                    ["clinicName"] = _notificationOptions.ClinicName,
+                    ["appointmentDate"] = appointmentDate,
+                    ["appointmentTime"] = appointmentTime,
+                    ["specialtyDisplay"] = specialtyDisplay
+                },
+                CorrelationId: correlationId),
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return newAppointment.Id;
