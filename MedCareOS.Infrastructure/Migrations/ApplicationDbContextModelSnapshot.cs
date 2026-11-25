@@ -980,6 +980,144 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.ToTable("overbook_collision_events", (string)null);
                 });
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookPolicyAuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at_utc");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("changed_by_user_id");
+
+                    b.Property<int>("EvaluatedCountAtChange")
+                        .HasColumnType("integer")
+                        .HasColumnName("evaluated_count_at_change");
+
+                    b.Property<decimal>("FalsePositiveRateAtChange")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("false_positive_rate_at_change");
+
+                    b.Property<bool>("ForcedOverride")
+                        .HasColumnType("boolean")
+                        .HasColumnName("forced_override");
+
+                    b.Property<bool>("GatePassed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("gate_passed");
+
+                    b.Property<bool>("NewAutoOverbookEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("new_auto_overbook_enabled");
+
+                    b.Property<bool>("PreviousAutoOverbookEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("previous_auto_overbook_enabled");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ChangedAtUtc")
+                        .HasDatabaseName("IX_overbook_policy_audit_logs_tenant_time");
+
+                    b.ToTable("overbook_policy_audit_logs", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookShadowDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cita_id");
+
+                    b.Property<string>("ClinicalExclusionCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("clinical_exclusion_code");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("decision");
+
+                    b.Property<decimal>("EffectiveRiskScore")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("effective_risk_score");
+
+                    b.Property<DateTimeOffset>("EvaluatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("evaluated_at_utc");
+
+                    b.Property<bool>("FinalNotificationDelivered")
+                        .HasColumnType("boolean")
+                        .HasColumnName("final_notification_delivered");
+
+                    b.Property<bool>("HasClinicalExclusion")
+                        .HasColumnType("boolean")
+                        .HasColumnName("has_clinical_exclusion");
+
+                    b.Property<bool>("IsSynthetic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_synthetic");
+
+                    b.Property<bool?>("OutcomeAttendance")
+                        .HasColumnType("boolean")
+                        .HasColumnName("outcome_attendance");
+
+                    b.Property<DateTimeOffset?>("OutcomeResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("outcome_resolved_at_utc");
+
+                    b.Property<Guid?>("ScheduleBlockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_block_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("ThresholdUsed")
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("threshold_used");
+
+                    b.Property<bool>("WouldHaveOverbooked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("would_have_overbooked");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId")
+                        .HasDatabaseName("IX_overbook_shadow_decisions_cita_id");
+
+                    b.HasIndex("TenantId", "WouldHaveOverbooked", "IsSynthetic")
+                        .HasDatabaseName("IX_overbook_shadow_decisions_tenant_eval");
+
+                    b.ToTable("overbook_shadow_decisions", (string)null);
+                });
+
             modelBuilder.Entity("MedCareOS.Domain.Entities.Patient", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2092,6 +2230,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasForeignKey("OverbookBlockId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookShadowDecision", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.Patient", b =>

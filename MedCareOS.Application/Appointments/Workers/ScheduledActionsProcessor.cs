@@ -244,6 +244,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
                         notificationRepository,
                         riskSignalProcessor,
                         anomalyPublisher,
+                        scope.ServiceProvider.GetService<IOverbookShadowDecisionRepository>(),
                         now,
                         cancellationToken);
                     break;
@@ -564,6 +565,7 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
         INotificationRepository notificationRepository,
         IRiskSignalProcessor riskSignalProcessor,
         IOmroAnomalyPublisher anomalyPublisher,
+        IOverbookShadowDecisionRepository? shadowDecisionRepository,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -583,6 +585,44 @@ public class ScheduledActionsProcessor : IScheduledActionsProcessor
             cancellationToken);
 
         var transition = appointment.MarkUnresponsive(now);
+
+        if (shadowDecisionRepository is not null &&
+            transition.StateChanged &&
+            !policy.AutoOverbookEnabled)
+        {
+            var effectiveScore = appointment.EffectiveRiskScore ?? appointment.CurrentBaseModelScore ?? 0m;
+            if (effectiveScore >= policy.HitlOverbookMinEffectiveScore &&
+                !await shadowDecisionRepository.ExistsForAppointmentAsync(appointment.Id, cancellationToken))
+            {
+                var delivered = previousFinal?.Status is NotificationStatus.Delivered or NotificationStatus.Read;
+                var exclusion = Domain.Services.ClinicalExclusionEvaluator.Evaluate(patient, staff, appointment, policy, now);
+                var wouldAutoOverbook = delivered && !exclusion.IsExcluded && effectiveScore >= policy.AutoOverbookMinEffectiveScore;
+                var decisionLabel = !delivered
+                    ? "ShadowSuppressedDelivery"
+                    : exclusion.IsExcluded
+                        ? "ShadowClinicalExclusion"
+                        : wouldAutoOverbook
+                            ? "ShadowWouldAutoOverbook"
+                            : "ShadowHitlProposal";
+
+                await shadowDecisionRepository.AddAsync(
+                    OverbookShadowDecision.Create(
+                        tenantId: appointment.TenantId,
+                        appointmentId: appointment.Id,
+                        scheduleBlockId: appointment.ScheduleBlockId,
+                        effectiveRiskScore: effectiveScore,
+                        thresholdUsed: policy.AutoOverbookMinEffectiveScore,
+                        decision: decisionLabel,
+                        wouldHaveOverbooked: wouldAutoOverbook,
+                        finalNotificationDelivered: delivered,
+                        hasClinicalExclusion: exclusion.IsExcluded,
+                        clinicalExclusionCode: exclusion.Code,
+                        isSynthetic: false,
+                        evaluatedAtUtc: now,
+                        correlationId: action.CorrelationId),
+                    cancellationToken);
+            }
+        }
 
         bool deadlineMissedPublished = false;
         if (RiskEscalationPolicy.ShouldEmitConfirmationDeadlineMissed(appointment, transition.StateChanged))
