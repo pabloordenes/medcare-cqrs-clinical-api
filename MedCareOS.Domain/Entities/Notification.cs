@@ -14,6 +14,7 @@ public class Notification
     public Guid Id { get; private set; }
     public Guid TenantId { get; private set; }
     public Guid? AppointmentId { get; private set; }
+    public Guid? WaitingListOfferId { get; private set; }
     public Guid PatientId { get; private set; }
     public NotificationType Type { get; private set; }
     public NotificationChannel Channel { get; private set; }
@@ -52,7 +53,8 @@ public class Notification
         string templateParamsJson,
         DateTimeOffset scheduledFor,
         Guid correlationId,
-        DateTimeOffset utcNow)
+        DateTimeOffset utcNow,
+        Guid? waitingListOfferId = null)
     {
         if (tenantId == Guid.Empty)
             throw new ArgumentException("TenantId no puede estar vacío.", nameof(tenantId));
@@ -62,6 +64,9 @@ public class Notification
 
         if (appointmentId.HasValue && appointmentId.Value == Guid.Empty)
             throw new ArgumentException("AppointmentId no puede ser Guid.Empty.", nameof(appointmentId));
+
+        if (waitingListOfferId.HasValue && waitingListOfferId.Value == Guid.Empty)
+            throw new ArgumentException("WaitingListOfferId no puede ser Guid.Empty.", nameof(waitingListOfferId));
 
         if (string.IsNullOrWhiteSpace(templateKey))
             throw new ArgumentException("TemplateKey es obligatorio.", nameof(templateKey));
@@ -84,6 +89,7 @@ public class Notification
             Id = Guid.NewGuid(),
             TenantId = tenantId,
             AppointmentId = appointmentId,
+            WaitingListOfferId = waitingListOfferId,
             PatientId = patientId,
             Type = type,
             Channel = channel,

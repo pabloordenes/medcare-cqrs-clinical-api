@@ -8,6 +8,7 @@ public interface INotificationRepository
     Task<Notification?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Notification?> GetByProviderMessageIdAsync(string providerMessageId, CancellationToken cancellationToken = default);
     Task<bool> ExistsByIdempotencyKeyAsync(Guid appointmentId, NotificationType type, DateTimeOffset scheduledFor, CancellationToken cancellationToken = default);
+    Task<bool> ExistsByWaitingListOfferAsync(Guid waitingListOfferId, NotificationType type, CancellationToken cancellationToken = default);
     Task<Notification?> GetLatestActionableByPatientAsync(Guid patientId, CancellationToken cancellationToken = default);
     Task<Notification?> GetLatestByAppointmentAndTypeAsync(Guid appointmentId, NotificationType type, CancellationToken cancellationToken = default);
     Task<List<Notification>> GetPendingRedactionBatchAsync(DateTimeOffset createdBeforeUtc, int batchSize, CancellationToken cancellationToken = default);

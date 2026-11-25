@@ -18,6 +18,7 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
         public async Task<List<AgendaBloqueDto>> Handle(SearchAvailabilityQuery request, CancellationToken cancellationToken)
         {
             var utcNow = DateTime.UtcNow;
+            var utcNowOffset = new DateTimeOffset(utcNow, TimeSpan.Zero);
             var desdeUtc = DateTime.SpecifyKind(request.Desde.Date, DateTimeKind.Utc);
             var hastaFinDelDiaUtc = DateTime.SpecifyKind(request.Hasta.Date.AddDays(1), DateTimeKind.Utc);
             var availableScheduleBlocks = await (
@@ -38,6 +39,12 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
                 join appBlock in _dbContext.Appointments on block.Id equals appBlock.ScheduleBlockId into appBlockGroup
                 from activeApp in appBlockGroup.Where(x => x.Status != AppointmentStatus.Cancelled).DefaultIfEmpty()
                 where activeApp == null
+
+                // Soft-hold: ocultar bloques retenidos por una oferta activa pendiente hacia lista de espera
+                where !_dbContext.WaitingListOffers.Any(o =>
+                    o.ScheduleBlockId == block.Id
+                    && o.Status == WaitingListOfferStatus.Pending
+                    && o.ExpiresAt > utcNowOffset)
 
                 select new AgendaBloqueDto(
                     block.Id, block.StaffId, block.BoxId, block.StartTime, block.EndTime, "libre", null, null, null

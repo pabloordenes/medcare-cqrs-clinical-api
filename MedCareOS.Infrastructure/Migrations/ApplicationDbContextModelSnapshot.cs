@@ -711,6 +711,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<Guid?>("WaitingListOfferId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("waiting_list_offer_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PatientId");
@@ -719,6 +723,9 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_notificaciones_provider_message_id")
                         .HasFilter("provider_message_id IS NOT NULL");
+
+                    b.HasIndex("WaitingListOfferId")
+                        .HasDatabaseName("IX_notificaciones_waiting_list_offer_id");
 
                     b.HasIndex("ContentRedactedAt", "CreatedAt")
                         .HasDatabaseName("IX_notificaciones_retention")
@@ -1004,7 +1011,7 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("character varying(40)")
                         .HasColumnName("action_scope");
 
-                    b.Property<Guid>("AppointmentId")
+                    b.Property<Guid?>("AppointmentId")
                         .HasColumnType("uuid")
                         .HasColumnName("cita_id");
 
@@ -1044,9 +1051,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("used_at");
 
+                    b.Property<Guid?>("WaitingListOfferId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("waiting_list_offer_id");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("AppointmentId");
+                    b.HasIndex("AppointmentId")
+                        .HasDatabaseName("IX_patient_action_tokens_cita_id");
 
                     b.HasIndex("ExpiresAt")
                         .HasDatabaseName("IX_patient_action_tokens_expires_at");
@@ -1059,7 +1071,13 @@ namespace MedCareOS.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_patient_action_tokens_hash");
 
-                    b.ToTable("patient_action_tokens", (string)null);
+                    b.HasIndex("WaitingListOfferId")
+                        .HasDatabaseName("IX_patient_action_tokens_waiting_list_offer_id");
+
+                    b.ToTable("patient_action_tokens", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_patient_action_tokens_single_target", "(cita_id IS NOT NULL AND waiting_list_offer_id IS NULL) OR (cita_id IS NULL AND waiting_list_offer_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.ProcessedMessage", b =>
@@ -1782,6 +1800,111 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.ToTable("lista_espera", (string)null);
                 });
 
+            modelBuilder.Entity("MedCareOS.Domain.Entities.WaitingListOffer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<int>("CascadeAttemptNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("cascade_attempt_number");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_stamp");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("NotificationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("notification_id");
+
+                    b.Property<DateTimeOffset>("OfferedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("offered_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("paciente_id");
+
+                    b.Property<DateTimeOffset?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("responded_at");
+
+                    b.Property<Guid?>("ResultAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("result_appointment_id");
+
+                    b.Property<Guid>("ScheduleBlockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_block_id");
+
+                    b.Property<Guid?>("SourceAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_appointment_id");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source_type");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WaitingListId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("waiting_list_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("IX_waiting_list_offers_paciente_id");
+
+                    b.HasIndex("ResultAppointmentId");
+
+                    b.HasIndex("ScheduleBlockId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_waiting_list_offers_active_block")
+                        .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("SourceAppointmentId");
+
+                    b.HasIndex("WaitingListId")
+                        .HasDatabaseName("IX_waiting_list_offers_waiting_list_id");
+
+                    b.HasIndex("Status", "ExpiresAt")
+                        .HasDatabaseName("IX_waiting_list_offers_pending_expires_at")
+                        .HasFilter("status = 'Pending'");
+
+                    b.ToTable("waiting_list_offers", (string)null);
+                });
+
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
                 {
                     b.HasOne("MassTransit.EntityFrameworkCoreIntegration.OutboxState", null)
@@ -1830,6 +1953,11 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.WaitingListOffer", null)
+                        .WithMany()
+                        .HasForeignKey("WaitingListOfferId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookCollisionEvent", b =>
@@ -1866,8 +1994,7 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
                         .WithMany()
                         .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("MedCareOS.Domain.Entities.Notification", null)
                         .WithMany()
@@ -1879,6 +2006,11 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.WaitingListOffer", null)
+                        .WithMany()
+                        .HasForeignKey("WaitingListOfferId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.ReceptionTask", b =>
@@ -1961,6 +2093,37 @@ namespace MedCareOS.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("PreferredStaffId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.WaitingListOffer", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("ResultAppointmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduleBlockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("SourceAppointmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MedCareOS.Domain.Entities.WaitingList", null)
+                        .WithMany()
+                        .HasForeignKey("WaitingListId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

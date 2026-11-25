@@ -1,3 +1,4 @@
+using MedCareOS.Application.Notifications.Events;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
 
@@ -20,7 +21,8 @@ public enum NotificationEnqueueOutcome
 public sealed record NotificationEnqueueResult(
     NotificationEnqueueOutcome Outcome,
     Guid? NotificationId = null,
-    NotificationChannel? Channel = null);
+    NotificationChannel? Channel = null,
+    SendNotificationRequested? PendingDispatchEvent = null);
 
 public sealed record EnqueueNotificationRequest(
     Guid TenantId,
@@ -33,4 +35,6 @@ public sealed record EnqueueNotificationRequest(
     IReadOnlyDictionary<string, string> Parameters,
     Guid CorrelationId,
     NotificationChannel? ChannelOverride = null,
-    bool ForceImmediateDispatch = false);
+    bool ForceImmediateDispatch = false,
+    Guid? WaitingListOfferId = null,
+    bool DeferPublishToCaller = false);

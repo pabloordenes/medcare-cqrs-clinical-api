@@ -23,6 +23,7 @@ public interface IApplicationDbContext
     DbSet<ProcessedMessage> ProcessedMessages { get; }
     DbSet<OverbookCollisionEvent> OverbookCollisionEvents { get; }
     DbSet<WaitingList> WaitingLists { get; }
+    DbSet<WaitingListOffer> WaitingListOffers { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

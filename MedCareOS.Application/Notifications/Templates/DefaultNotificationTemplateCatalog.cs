@@ -14,12 +14,16 @@ public sealed record DefaultNotificationTemplateDefinition(
     IReadOnlyList<string> MetaOrderedParameterKeys,
     IReadOnlyList<(string IdPrefix, string Label, bool IsUrlButton)> Buttons)
 {
-    public IReadOnlyList<NotificationActionButton> BuildButtons(Guid? appointmentId, string? rescheduleTokenSuffix)
+    public IReadOnlyList<NotificationActionButton> BuildButtons(
+        Guid? appointmentId,
+        string? rescheduleTokenSuffix,
+        Guid? waitingListOfferId = null)
     {
         if (Buttons.Count == 0)
             return [];
 
         var list = new List<NotificationActionButton>(Buttons.Count);
+        var targetId = waitingListOfferId ?? appointmentId;
         foreach (var (idPrefix, label, isUrl) in Buttons)
         {
             if (isUrl)
@@ -28,7 +32,7 @@ public sealed record DefaultNotificationTemplateDefinition(
             }
             else
             {
-                var payload = appointmentId.HasValue ? $"{idPrefix}:{appointmentId.Value}" : idPrefix;
+                var payload = targetId.HasValue ? $"{idPrefix}:{targetId.Value}" : idPrefix;
                 list.Add(new NotificationActionButton(payload, label));
             }
         }
@@ -153,7 +157,7 @@ public static class DefaultNotificationTemplateCatalog
             "Hola {{patientFirstName}}, se habilitó un cupo en {{clinicName}} ({{specialtyDisplay}}) para el {{appointmentDate}} a las {{appointmentTime}}. Confirma antes de {{deadline}} si deseas tomar este horario.",
             "medcare_cupo_lista_espera_v1",
             ["patientFirstName", "clinicName", "specialtyDisplay", "appointmentDate", "appointmentTime", "deadline"],
-            [("CONFIRM", "Tomar cupo", false), ("CANCEL", "Rechazar", false)]),
+            [("ACCEPT_OFFER", "Tomar cupo", false), ("DECLINE_OFFER", "Rechazar", false)]),
         new(
             Keys.WaitingListOffer,
             NotificationChannel.Email,

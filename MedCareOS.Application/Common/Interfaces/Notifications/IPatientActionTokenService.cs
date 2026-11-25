@@ -12,6 +12,13 @@ public interface IPatientActionTokenService
         TimeSpan ttl,
         CancellationToken cancellationToken = default);
 
+    Task<IssuedActionToken> IssueForWaitingListOfferAsync(
+        Guid waitingListOfferId,
+        Guid patientId,
+        Guid? notificationId,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default);
+
     Task<ActionTokenPreviewResult> PreviewAsync(string rawToken, CancellationToken cancellationToken = default);
 
     Task<ActionTokenConsumeResult> ConsumeAsync(
@@ -45,7 +52,9 @@ public sealed record ActionTokenPreviewResult(
     string? AppointmentTimeLocal = null,
     string? Specialty = null,
     IReadOnlyList<PatientReplyIntent>? AllowedActions = null,
-    DateTimeOffset? ExpiresAt = null);
+    DateTimeOffset? ExpiresAt = null,
+    Guid? WaitingListOfferId = null,
+    string? TargetKind = null);
 
 public sealed record ActionTokenConsumeResult(
     bool IsSuccess,
@@ -53,4 +62,5 @@ public sealed record ActionTokenConsumeResult(
     Guid? AppointmentId = null,
     Guid? PatientId = null,
     Guid? NotificationId = null,
-    PatientReplyIntent ExecutedIntent = PatientReplyIntent.Unknown);
+    PatientReplyIntent ExecutedIntent = PatientReplyIntent.Unknown,
+    Guid? WaitingListOfferId = null);

@@ -44,6 +44,24 @@ public class AppointmentRepository : IAppointmentRepository
             .AnyAsync(a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled, cancellationToken);
     }
 
+    public async Task<bool> HasOverlappingActiveAppointmentAsync(
+        Guid patientId,
+        DateTime startTimeUtc,
+        DateTime endTimeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await (
+            from app in _dbContext.Appointments.AsNoTracking()
+            join block in _dbContext.ScheduleBlocks.AsNoTracking() on app.ScheduleBlockId equals block.Id
+            where app.PatientId == patientId
+                  && app.Status != AppointmentStatus.Cancelled
+                  && app.Status != AppointmentStatus.NoShow
+                  && block.StartTime < endTimeUtc
+                  && block.EndTime > startTimeUtc
+            select app.Id
+        ).AnyAsync(cancellationToken);
+    }
+
     public async Task<List<Appointment>> GetPastUnattendedAppointmentsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
     {
         return await (

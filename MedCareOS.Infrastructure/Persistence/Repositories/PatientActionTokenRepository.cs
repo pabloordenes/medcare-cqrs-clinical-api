@@ -37,6 +37,24 @@ public class PatientActionTokenRepository : IPatientActionTokenRepository
         }
     }
 
+    public async Task RevokeActiveForWaitingListOfferAsync(
+        Guid waitingListOfferId,
+        DateTimeOffset utcNow,
+        CancellationToken cancellationToken = default)
+    {
+        var activeTokens = await _dbContext.PatientActionTokens
+            .Where(t => t.WaitingListOfferId == waitingListOfferId
+                        && t.UsedAt == null
+                        && t.RevokedAt == null
+                        && t.ExpiresAt > utcNow)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in activeTokens)
+        {
+            token.Revoke(utcNow);
+        }
+    }
+
     public async Task AddAsync(PatientActionToken token, CancellationToken cancellationToken = default)
     {
         await _dbContext.PatientActionTokens.AddAsync(token, cancellationToken);

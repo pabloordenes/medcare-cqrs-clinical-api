@@ -26,6 +26,7 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
     private readonly IUnitOfWork _unitOfWork;
     private readonly NotificationOptions _options;
     private readonly ILogger<SendNotificationConsumer> _logger;
+    private readonly IWaitingListOfferRepository? _waitingListOfferRepository;
 
     public SendNotificationConsumer(
         INotificationRepository notificationRepository,
@@ -37,7 +38,8 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         IRiskSignalProcessor riskSignalProcessor,
         IUnitOfWork unitOfWork,
         IOptions<NotificationOptions> options,
-        ILogger<SendNotificationConsumer> logger)
+        ILogger<SendNotificationConsumer> logger,
+        IWaitingListOfferRepository? waitingListOfferRepository = null)
     {
         _notificationRepository = notificationRepository;
         _patientRepository = patientRepository;
@@ -49,6 +51,7 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _logger = logger;
+        _waitingListOfferRepository = waitingListOfferRepository;
     }
 
     public async Task Consume(ConsumeContext<SendNotificationRequested> context)
@@ -101,6 +104,19 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
                 appointment.IsPatientConfirmed)
             {
                 notification.Cancel("El paciente ya confirmó la cita antes del despacho.", utcNow);
+                await _unitOfWork.SaveChangesAsync(ct);
+                return;
+            }
+        }
+
+        if (notification.WaitingListOfferId.HasValue &&
+            notification.Type == NotificationType.WaitingListOffer &&
+            _waitingListOfferRepository is not null)
+        {
+            var offer = await _waitingListOfferRepository.GetByIdAsync(notification.WaitingListOfferId.Value, ct);
+            if (offer is null || offer.Status != WaitingListOfferStatus.Pending || offer.ExpiresAt <= utcNow)
+            {
+                notification.Cancel("La oferta de lista de espera ya no está vigente.", utcNow);
                 await _unitOfWork.SaveChangesAsync(ct);
                 return;
             }
@@ -159,7 +175,8 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
                 notification.Locale,
                 parameters,
                 actionUrls,
-                rescheduleTokenSuffix),
+                rescheduleTokenSuffix,
+                notification.WaitingListOfferId),
             ct);
 
         var adapter = _channelResolver.Resolve(notification.Channel);
@@ -284,12 +301,44 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
         Guid patientId,
         CancellationToken ct)
     {
+        var baseUrl = string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
+            ? "https://app.medcare.cl"
+            : _options.PublicBaseUrl.TrimEnd('/');
+
+        if (notification.Type == NotificationType.WaitingListOffer && notification.WaitingListOfferId.HasValue)
+        {
+            var ttl = TimeSpan.FromMinutes(60);
+            if (_waitingListOfferRepository is not null)
+            {
+                var offer = await _waitingListOfferRepository.GetByIdAsync(notification.WaitingListOfferId.Value, ct);
+                if (offer is not null)
+                {
+                    var remaining = offer.ExpiresAt - DateTimeOffset.UtcNow;
+                    ttl = remaining > TimeSpan.FromMinutes(1) ? remaining : TimeSpan.FromMinutes(1);
+                }
+            }
+
+            var offerToken = await _tokenService.IssueForWaitingListOfferAsync(
+                notification.WaitingListOfferId.Value,
+                patientId,
+                notification.Id,
+                ttl,
+                ct);
+
+            var encodedOfferToken = Uri.EscapeDataString(offerToken.RawToken);
+            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["confirmUrl"] = $"{baseUrl}/waiting-list/offers/respond?token={encodedOfferToken}&action=accept",
+                ["cancelUrl"] = $"{baseUrl}/waiting-list/offers/respond?token={encodedOfferToken}&action=decline"
+            }, null);
+        }
+
         if (!notification.AppointmentId.HasValue)
             return (null, null);
 
         PatientActionScope? scope = notification.Type switch
         {
-            NotificationType.Reminder or NotificationType.FinalConfirmation or NotificationType.OverbookNotice or NotificationType.WaitingListOffer
+            NotificationType.Reminder or NotificationType.FinalConfirmation or NotificationType.OverbookNotice
                 => PatientActionScope.ConfirmOrCancel,
             NotificationType.RescheduleHelp => PatientActionScope.Reschedule,
             _ => null
@@ -307,9 +356,6 @@ public class SendNotificationConsumer : IConsumer<SendNotificationRequested>
             TimeSpan.FromHours(ttlHours),
             ct);
 
-        var baseUrl = string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
-            ? "https://app.medcare.cl"
-            : _options.PublicBaseUrl.TrimEnd('/');
         var encodedToken = Uri.EscapeDataString(issued.RawToken);
 
         if (scope.Value == PatientActionScope.Reschedule)

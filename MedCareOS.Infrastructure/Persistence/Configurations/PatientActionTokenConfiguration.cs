@@ -8,7 +8,9 @@ public class PatientActionTokenConfiguration : IEntityTypeConfiguration<PatientA
 {
     public void Configure(EntityTypeBuilder<PatientActionToken> builder)
     {
-        builder.ToTable("patient_action_tokens");
+        builder.ToTable("patient_action_tokens", t => t.HasCheckConstraint(
+            "CK_patient_action_tokens_single_target",
+            "(cita_id IS NOT NULL AND waiting_list_offer_id IS NULL) OR (cita_id IS NULL AND waiting_list_offer_id IS NOT NULL)"));
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id");
@@ -19,8 +21,10 @@ public class PatientActionTokenConfiguration : IEntityTypeConfiguration<PatientA
             .IsRequired();
 
         builder.Property(x => x.AppointmentId)
-            .HasColumnName("cita_id")
-            .IsRequired();
+            .HasColumnName("cita_id");
+
+        builder.Property(x => x.WaitingListOfferId)
+            .HasColumnName("waiting_list_offer_id");
 
         builder.Property(x => x.PatientId)
             .HasColumnName("paciente_id")
@@ -57,7 +61,14 @@ public class PatientActionTokenConfiguration : IEntityTypeConfiguration<PatientA
         builder.HasOne<Appointment>()
             .WithMany()
             .HasForeignKey(x => x.AppointmentId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<WaitingListOffer>()
+            .WithMany()
+            .HasForeignKey(x => x.WaitingListOfferId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne<Patient>()
             .WithMany()
@@ -69,6 +80,12 @@ public class PatientActionTokenConfiguration : IEntityTypeConfiguration<PatientA
             .HasForeignKey(x => x.NotificationId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(x => x.AppointmentId)
+            .HasDatabaseName("IX_patient_action_tokens_cita_id");
+
+        builder.HasIndex(x => x.WaitingListOfferId)
+            .HasDatabaseName("IX_patient_action_tokens_waiting_list_offer_id");
 
         builder.HasIndex(x => x.TokenHash)
             .HasDatabaseName("UX_patient_action_tokens_hash")

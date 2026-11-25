@@ -22,6 +22,9 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.Property(x => x.AppointmentId)
             .HasColumnName("cita_id");
 
+        builder.Property(x => x.WaitingListOfferId)
+            .HasColumnName("waiting_list_offer_id");
+
         builder.Property(x => x.PatientId)
             .HasColumnName("paciente_id")
             .IsRequired();
@@ -126,10 +129,19 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne<WaitingListOffer>()
+            .WithMany()
+            .HasForeignKey(x => x.WaitingListOfferId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasOne<Patient>()
             .WithMany()
             .HasForeignKey(x => x.PatientId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.WaitingListOfferId)
+            .HasDatabaseName("IX_notificaciones_waiting_list_offer_id");
 
         builder.HasIndex(x => new { x.AppointmentId, x.Type, x.ScheduledFor })
             .HasDatabaseName("UX_notificaciones_idempotency")
