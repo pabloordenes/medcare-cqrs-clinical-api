@@ -270,6 +270,8 @@ builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+builder.Services.AddScoped<IWaitingListRepository, WaitingListRepository>();
+builder.Services.AddScoped<MedCareOS.Application.WaitingLists.Ranking.IWaitingListRanker, MedCareOS.Application.WaitingLists.Ranking.DeterministicWaitingListRanker>();
 builder.Services.AddScoped<IOverbookCollisionEventRepository, OverbookCollisionEventRepository>();
 builder.Services.AddScoped<IWaitingListOfferCancellationService, NoOpWaitingListOfferCancellationService>();
 builder.Services.AddScoped<IOverbookCollisionResolutionService, OverbookCollisionResolutionService>();

@@ -22,6 +22,7 @@ public interface IApplicationDbContext
     DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; }
     DbSet<ProcessedMessage> ProcessedMessages { get; }
     DbSet<OverbookCollisionEvent> OverbookCollisionEvents { get; }
+    DbSet<WaitingList> WaitingLists { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

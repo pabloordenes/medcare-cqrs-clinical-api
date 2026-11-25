@@ -1679,35 +1679,105 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
                     b.Property<string>("ClinicalContext")
                         .HasColumnType("jsonb")
                         .HasColumnName("contexto_clinico");
+
+                    b.Property<Guid?>("DisplacedSourceAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("displaced_source_appointment_id");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<bool>("IsDisplacedBonus")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_displaced_bonus");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("paciente_id");
 
+                    b.Property<DateOnly?>("PreferredFromDate")
+                        .HasColumnType("date")
+                        .HasColumnName("preferred_from_date");
+
+                    b.Property<Guid?>("PreferredStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("preferred_staff_id");
+
+                    b.Property<TimeOnly?>("PreferredTimeEnd")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("preferred_time_end");
+
+                    b.Property<TimeOnly?>("PreferredTimeStart")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("preferred_time_start");
+
+                    b.Property<DateOnly?>("PreferredToDate")
+                        .HasColumnType("date")
+                        .HasColumnName("preferred_to_date");
+
                     b.Property<int>("Priority")
                         .HasColumnType("integer")
                         .HasColumnName("prioridad");
 
-                    b.Property<DateTime>("RegistrationDate")
+                    b.Property<DateTimeOffset>("RegistrationDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_inscripcion");
 
                     b.Property<string>("Specialty")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
                         .HasColumnName("especialidad");
+
+                    b.Property<string>("SpecialtyNormalized")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("especialidad_normalizada");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
                         .HasColumnName("estado");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PatientId");
+                    b.HasIndex("DisplacedSourceAppointmentId");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("IX_lista_espera_paciente_id");
+
+                    b.HasIndex("PreferredStaffId");
+
+                    b.HasIndex("TenantId", "PatientId", "SpecialtyNormalized")
+                        .IsUnique()
+                        .HasDatabaseName("UX_lista_espera_active_patient_specialty")
+                        .HasFilter("estado IN ('Active', 'Offered')");
+
+                    b.HasIndex("TenantId", "SpecialtyNormalized", "Status")
+                        .HasDatabaseName("IX_lista_espera_tenant_specialty_status");
 
                     b.ToTable("lista_espera", (string)null);
                 });
@@ -1876,11 +1946,21 @@ namespace MedCareOS.Infrastructure.Migrations
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.WaitingList", b =>
                 {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("DisplacedSourceAppointmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MedCareOS.Domain.Entities.Patient", null)
                         .WithMany()
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Staff", null)
+                        .WithMany()
+                        .HasForeignKey("PreferredStaffId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 #pragma warning restore 612, 618
         }
