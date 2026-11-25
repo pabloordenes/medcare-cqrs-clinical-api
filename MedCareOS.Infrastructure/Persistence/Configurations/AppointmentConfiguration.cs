@@ -74,6 +74,21 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(x => x.WaitingListOfferId)
             .HasColumnName("waiting_list_offer_id");
 
+        builder.Property(x => x.ReschedulesCount)
+            .HasColumnName("reschedules_count")
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(x => x.CancellationReason)
+            .HasColumnName("cancellation_reason")
+            .HasMaxLength(Appointment.MaxCancellationReasonLength);
+
+        builder.Property(x => x.CancelledAt)
+            .HasColumnName("cancelled_at");
+
+        builder.Property(x => x.LastRescheduledAt)
+            .HasColumnName("last_rescheduled_at");
+
         builder.Property(x => x.ConfirmationOutcome)
             .HasColumnName("confirmation_outcome")
             .HasConversion<string>()

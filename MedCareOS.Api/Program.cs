@@ -92,6 +92,7 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
     x.AddConsumer<LateConfirmationReceivedConsumer, LateConfirmationReceivedConsumerDefinition>();
     x.AddConsumer<MedCareOS.Application.WaitingLists.Consumers.OverbookOpenedConsumer, OverbookOpenedConsumerDefinition>();
+    x.AddConsumer<MedCareOS.Application.WaitingLists.Consumers.SlotReleasedConsumer, SlotReleasedConsumerDefinition>();
 
     x.AddEntityFrameworkOutbox<ApplicationDbContext>(o =>
     {
@@ -276,6 +277,8 @@ builder.Services.AddScoped<IWaitingListOfferRepository, WaitingListOfferReposito
 builder.Services.AddScoped<MedCareOS.Application.WaitingLists.Ranking.IWaitingListRanker, MedCareOS.Application.WaitingLists.Ranking.DeterministicWaitingListRanker>();
 builder.Services.AddScoped<IWaitingListBackfillService, MedCareOS.Application.WaitingLists.Services.WaitingListBackfillService>();
 builder.Services.AddScoped<IOverbookCollisionEventRepository, OverbookCollisionEventRepository>();
+builder.Services.AddScoped<IAppointmentRescheduleHistoryRepository, AppointmentRescheduleHistoryRepository>();
+builder.Services.AddScoped<MedCareOS.Application.Appointments.Services.ISlotReleaseService, MedCareOS.Application.Appointments.Services.SlotReleaseService>();
 builder.Services.AddScoped<IWaitingListOfferCancellationService, MedCareOS.Application.WaitingLists.Services.WaitingListOfferCancellationService>();
 builder.Services.AddSingleton<MedCareOS.Application.WaitingLists.Workers.IWaitingListOfferExpirationProcessor, MedCareOS.Application.WaitingLists.Workers.WaitingListOfferExpirationProcessor>();
 builder.Services.AddScoped<IOverbookCollisionResolutionService, OverbookCollisionResolutionService>();

@@ -2,6 +2,8 @@ using System.Text.Json;
 using MassTransit;
 using MedCareOS.Application.Appointments.Lifecycle;
 using MedCareOS.Application.Appointments.Risk;
+using MedCareOS.Application.Appointments.Services;
+using MedCareOS.Application.Common.Persistence;
 using MedCareOS.Application.Notifications.Events;
 using MedCareOS.Application.Resolutions.Services;
 using MedCareOS.Domain.Enums;
@@ -20,6 +22,9 @@ public class DeclineAppointmentCommandHandler : IRequestHandler<DeclineAppointme
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<DeclineAppointmentCommandHandler> _logger;
+    private readonly IScheduleBlockRepository? _scheduleBlockRepository;
+    private readonly ISlotReleaseService? _slotReleaseService;
+    private readonly ITransactionalExecutor? _transactionalExecutor;
 
     public DeclineAppointmentCommandHandler(
         IAppointmentRepository appointmentRepository,
@@ -28,7 +33,10 @@ public class DeclineAppointmentCommandHandler : IRequestHandler<DeclineAppointme
         IAiResolutionSupersedingService resolutionSupersedingService,
         IPublishEndpoint publishEndpoint,
         IUnitOfWork unitOfWork,
-        ILogger<DeclineAppointmentCommandHandler> logger)
+        ILogger<DeclineAppointmentCommandHandler> logger,
+        IScheduleBlockRepository? scheduleBlockRepository = null,
+        ISlotReleaseService? slotReleaseService = null,
+        ITransactionalExecutor? transactionalExecutor = null)
     {
         _appointmentRepository = appointmentRepository;
         _lifecyclePlanner = lifecyclePlanner;
@@ -37,9 +45,27 @@ public class DeclineAppointmentCommandHandler : IRequestHandler<DeclineAppointme
         _publishEndpoint = publishEndpoint;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _scheduleBlockRepository = scheduleBlockRepository;
+        _slotReleaseService = slotReleaseService;
+        _transactionalExecutor = transactionalExecutor;
     }
 
     public async Task<DeclineAppointmentResult> Handle(
+        DeclineAppointmentCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (_transactionalExecutor is not null)
+        {
+            return await _transactionalExecutor.ExecuteAsync(
+                $"overbook-source:{request.AppointmentId:N}",
+                ct => HandleInternalAsync(request, ct),
+                cancellationToken);
+        }
+
+        return await HandleInternalAsync(request, cancellationToken);
+    }
+
+    private async Task<DeclineAppointmentResult> HandleInternalAsync(
         DeclineAppointmentCommand request,
         CancellationToken cancellationToken)
     {
@@ -58,6 +84,25 @@ public class DeclineAppointmentCommandHandler : IRequestHandler<DeclineAppointme
             : (request.Channel.HasValue
                 ? $"Declinada por paciente vía {request.Channel.Value}."
                 : "Declinada por el paciente.");
+
+        SlotReleasePreparationResult? releasePlan = null;
+        if (_slotReleaseService is not null && _scheduleBlockRepository is not null)
+        {
+            var vacatedBlock = await _scheduleBlockRepository.GetByIdForUpdateAsync(appointment.ScheduleBlockId, cancellationToken)
+                ?? await _scheduleBlockRepository.GetByIdAsync(appointment.ScheduleBlockId, cancellationToken);
+
+            if (appointment.Status is AppointmentStatus.Scheduled or AppointmentStatus.Confirmed &&
+                appointment.ConfirmationState != ConfirmationState.DeclinedByPatient)
+            {
+                releasePlan = await _slotReleaseService.PrepareSlotVacatedAsync(
+                    appointment,
+                    vacatedBlock,
+                    "DeclinedByPatient",
+                    correlationId,
+                    utcNow,
+                    cancellationToken);
+            }
+        }
 
         var transition = appointment.DeclineByPatient(effectiveReason, utcNow);
 
@@ -122,6 +167,25 @@ public class DeclineAppointmentCommandHandler : IRequestHandler<DeclineAppointme
         if (transition.StateChanged || cancelledActions > 0 || supersededTasks > 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        if (transition.StateChanged && releasePlan is not null)
+        {
+            var publishedRelease = false;
+            if (releasePlan.SlotReleasedEvent is not null)
+            {
+                await _publishEndpoint.Publish(releasePlan.SlotReleasedEvent, cancellationToken);
+                publishedRelease = true;
+            }
+            if (releasePlan.OverbookOpenedEvent is not null)
+            {
+                await _publishEndpoint.Publish(releasePlan.OverbookOpenedEvent, cancellationToken);
+                publishedRelease = true;
+            }
+            if (publishedRelease)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
         }
 
         return new DeclineAppointmentResult(

@@ -7,6 +7,8 @@ namespace MedCareOS.Domain.Entities;
 
 public class Appointment
 {
+    public const int MaxCancellationReasonLength = 300;
+
     public Guid Id { get; private set; }
     public Guid TenantId { get; private set; } = RiskThresholds.DefaultTenantId;
     public Guid ScheduleBlockId { get; private set; }
@@ -23,6 +25,10 @@ public class Appointment
     public bool WasEverDisplacedByOverbook { get; private set; }
     public DateTimeOffset? DisplacedAt { get; private set; }
     public Guid? WaitingListOfferId { get; private set; }
+    public int ReschedulesCount { get; private set; }
+    public string? CancellationReason { get; private set; }
+    public DateTimeOffset? CancelledAt { get; private set; }
+    public DateTimeOffset? LastRescheduledAt { get; private set; }
     public ConfirmationAttendanceOutcome? ConfirmationOutcome { get; private set; }
     public string SymptomsRaw { get; private set; } = string.Empty;
     public string? ProcessedSymptoms { get; private set; }
@@ -322,8 +328,7 @@ public class Appointment
 
         var previous = ConfirmationState;
         ConfirmationState = ConfirmationState.DeclinedByPatient;
-        Cancel(string.IsNullOrWhiteSpace(reason) ? "Declinada por el paciente." : reason);
-        UpdatedAt = utcNow;
+        Cancel(string.IsNullOrWhiteSpace(reason) ? "Declinada por el paciente." : reason, utcNow);
 
         return new ConfirmationTransitionResult(
             ConfirmationTransitionOutcome.DeclinedByPatient,
@@ -392,6 +397,9 @@ public class Appointment
     }
 
     public void Cancel(string? reason = null)
+        => Cancel(reason, DateTimeOffset.UtcNow);
+
+    public void Cancel(string? reason, DateTimeOffset utcNow)
     {
         if (Status is not AppointmentStatus.Scheduled and not AppointmentStatus.Confirmed)
             throw new InvalidOperationException($"No se puede cancelar una cita en estado '{Status}'.");
@@ -399,7 +407,50 @@ public class Appointment
         Status = AppointmentStatus.Cancelled;
         OrchestrationSuppressed = true;
         NextScoringRetryAt = null;
-        UpdatedAt = DateTimeOffset.UtcNow;
+        CancelledAt ??= utcNow;
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            var trimmed = reason.Trim();
+            CancellationReason = trimmed.Length <= MaxCancellationReasonLength
+                ? trimmed
+                : trimmed[..MaxCancellationReasonLength];
+        }
+        UpdatedAt = utcNow;
+    }
+
+    public void Reschedule(
+        Guid newScheduleBlockId,
+        DateTimeOffset utcNow,
+        int maxReschedules,
+        bool bypassLimitIfDisplaced = true)
+    {
+        if (Status is not (AppointmentStatus.Scheduled or AppointmentStatus.Confirmed))
+            throw new InvalidOperationException($"No se puede reagendar una cita en estado '{Status}'.");
+
+        if (newScheduleBlockId == Guid.Empty)
+            throw new ArgumentException("El nuevo ScheduleBlockId no puede estar vacío.", nameof(newScheduleBlockId));
+
+        if (newScheduleBlockId == ScheduleBlockId)
+            throw new InvalidOperationException("El nuevo bloque horario debe ser distinto al actual.");
+
+        var isDisplaced = IsDisplacedByOverbook || WasEverDisplacedByOverbook;
+        if (!(bypassLimitIfDisplaced && isDisplaced) && ReschedulesCount >= maxReschedules)
+        {
+            throw new InvalidOperationException(
+                $"Se alcanzó el límite máximo de {maxReschedules} reagendamiento(s) permitido(s) para esta cita.");
+        }
+
+        ScheduleBlockId = newScheduleBlockId;
+        Status = AppointmentStatus.Scheduled;
+        ConfirmationState = ConfirmationState.Pending;
+        ConfirmedAt = null;
+        FinalConfirmationRequestedAt = null;
+        DeadlineMissedAt = null;
+        OrchestrationSuppressed = false;
+        IsDisplacedByOverbook = false;
+        ReschedulesCount++;
+        LastRescheduledAt = utcNow;
+        UpdatedAt = utcNow;
     }
 
     public void MarkNoShow()

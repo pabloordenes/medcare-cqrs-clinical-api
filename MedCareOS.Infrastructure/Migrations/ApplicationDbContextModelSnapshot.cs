@@ -246,6 +246,15 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("asistio");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
                     b.Property<DateTimeOffset?>("CheckedInAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("checked_in_at");
@@ -297,6 +306,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_displaced_by_overbook");
 
+                    b.Property<DateTimeOffset?>("LastRescheduledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_rescheduled_at");
+
                     b.Property<string>("LastScoringError")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -347,6 +360,12 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<string>("ProcessedSymptoms")
                         .HasColumnType("jsonb")
                         .HasColumnName("sintomas_procesados");
+
+                    b.Property<int>("ReschedulesCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("reschedules_count");
 
                     b.Property<DateTimeOffset?>("RescoredAt")
                         .HasColumnType("timestamp with time zone")
@@ -429,6 +448,74 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasFilter("confirmation_outcome IS NOT NULL");
 
                     b.ToTable("citas", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.AppointmentRescheduleHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cita_id");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("channel");
+
+                    b.Property<Guid>("FromScheduleBlockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_schedule_block_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("paciente_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("reason");
+
+                    b.Property<int>("RescheduleNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("reschedule_number");
+
+                    b.Property<DateTimeOffset>("RescheduledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rescheduled_at_utc");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ToScheduleBlockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_schedule_block_id");
+
+                    b.Property<Guid?>("TriggeredByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("triggered_by_user_id");
+
+                    b.Property<bool>("WasDisplacedPriority")
+                        .HasColumnType("boolean")
+                        .HasColumnName("was_displaced_priority");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId")
+                        .HasDatabaseName("IX_appointment_reschedule_history_appointment_id");
+
+                    b.HasIndex("FromScheduleBlockId");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("ToScheduleBlockId");
+
+                    b.ToTable("appointment_reschedule_history", (string)null);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.AppointmentScheduledAction", b =>
@@ -1928,6 +2015,33 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
                         .WithMany()
                         .HasForeignKey("ScheduleBlockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.AppointmentRescheduleHistory", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
+                        .WithMany()
+                        .HasForeignKey("FromScheduleBlockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
+                        .WithMany()
+                        .HasForeignKey("ToScheduleBlockId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

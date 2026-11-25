@@ -24,6 +24,7 @@ public interface IApplicationDbContext
     DbSet<OverbookCollisionEvent> OverbookCollisionEvents { get; }
     DbSet<WaitingList> WaitingLists { get; }
     DbSet<WaitingListOffer> WaitingListOffers { get; }
+    DbSet<AppointmentRescheduleHistory> AppointmentRescheduleHistories { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
