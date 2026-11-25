@@ -22,18 +22,16 @@ public sealed class OverbookCollisionApiFactory : CustomApiFactory
 {
     protected override void ConfigureTestMassTransit(IBusRegistrationConfigurator configurator)
     {
+        configurator.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(30), testInactivityTimeout: TimeSpan.FromSeconds(10));
         configurator.AddConsumer<LateConfirmationReceivedConsumer, LateConfirmationReceivedConsumerDefinition>();
     }
 }
 
-public class OverbookCollisionResolutionTests : IClassFixture<OverbookCollisionApiFactory>
+public class OverbookCollisionResolutionTests : IAsyncDisposable
 {
-    private readonly OverbookCollisionApiFactory _factory;
+    private readonly OverbookCollisionApiFactory _factory = new();
 
-    public OverbookCollisionResolutionTests(OverbookCollisionApiFactory factory)
-    {
-        _factory = factory;
-    }
+    public ValueTask DisposeAsync() => _factory.DisposeAsync();
 
     [Fact]
     public async Task LateConfirmationReceived_WhenOverbookIsFree_ShouldDeactivateOverbookBlock()
