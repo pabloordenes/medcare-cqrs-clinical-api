@@ -33,6 +33,23 @@ public class AppointmentRepository : IAppointmentRepository
                 cancellationToken);
     }
 
+    public async Task<List<Appointment>> GetByPatientIdAsync(
+        Guid patientId,
+        bool includePast,
+        CancellationToken cancellationToken = default)
+    {
+        var utcNow = DateTime.UtcNow;
+        var query =
+            from app in _dbContext.Appointments.AsNoTracking()
+            join block in _dbContext.ScheduleBlocks.AsNoTracking() on app.ScheduleBlockId equals block.Id
+            where app.PatientId == patientId
+                  && (includePast || block.EndTime >= utcNow)
+            orderby block.StartTime
+            select app;
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
     public async Task<int> GetNoShowCountByPatientId(Guid patientId, CancellationToken cancellationToken)
     {
         return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);

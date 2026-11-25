@@ -1,8 +1,11 @@
 using MedCareOS.Application.Appointments.Commands.ConfirmAppointment;
 using MedCareOS.Application.Appointments.Commands.DeclineAppointment;
+using MedCareOS.Application.Appointments.Commands.RescheduleAppointment;
+using MedCareOS.Application.Appointments.Queries.GetRescheduleOptions;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Patients.Commands.RecordPatientOptOut;
 using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Exceptions;
 using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -34,6 +37,7 @@ public class PublicPatientActionsController : ControllerBase
     public record PublicPatientActionRequestDto(string Token, PatientReplyIntent Action);
     public record PublicTokenConfirmRequestDto(string Token);
     public record PublicTokenDeclineRequestDto(string Token, string? Reason = null);
+    public record PublicTokenRescheduleRequestDto(string Token, Guid NewScheduleBlockId, string? Reason = null);
 
     [HttpGet("action-preview")]
     public async Task<IActionResult> PreviewAction([FromQuery] string token, CancellationToken cancellationToken)
@@ -95,6 +99,95 @@ public class PublicPatientActionsController : ControllerBase
             return Task.FromResult<IActionResult>(BadRequest(new { message = "Solicitud inválida." }));
 
         return ConsumeAndDispatchAsync(request.Token, PatientReplyIntent.Cancel, request.Reason, cancellationToken);
+    }
+
+    [HttpGet("reschedule-options")]
+    [ProducesResponseType(typeof(RescheduleOptionsResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public async Task<IActionResult> GetPublicRescheduleOptions(
+        [FromQuery] string token,
+        [FromQuery] DateOnly? fromDate = null,
+        [FromQuery] DateOnly? toDate = null,
+        [FromQuery] Guid? preferredStaffId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return BadRequest(new { message = "Enlace inválido." });
+
+        var validation = await _tokenService.ValidateRescheduleTokenAsync(token, cancellationToken);
+        if (!validation.IsSuccess)
+            return MapValidationFailure(validation.ValidationStatus);
+
+        try
+        {
+            var result = await _sender.Send(
+                new GetRescheduleOptionsQuery(
+                    AppointmentId: validation.AppointmentId!.Value,
+                    AuthenticatedUserId: null,
+                    ExpectedPatientId: validation.PatientId!.Value,
+                    FromDate: fromDate,
+                    ToDate: toDate,
+                    PreferredStaffId: preferredStaffId),
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("reschedule")]
+    [ProducesResponseType(typeof(RescheduleAppointmentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public async Task<IActionResult> RescheduleByToken(
+        [FromBody] PublicTokenRescheduleRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Token) || request.NewScheduleBlockId == Guid.Empty)
+            return BadRequest(new { message = "Token y NewScheduleBlockId son obligatorios." });
+
+        var consumed = await _tokenService.ConsumeRescheduleTokenAsync(request.Token, cancellationToken);
+        if (!consumed.IsSuccess)
+            return MapValidationFailure(consumed.ValidationStatus);
+
+        try
+        {
+            var result = await _sender.Send(
+                new RescheduleAppointmentCommand(
+                    AppointmentId: consumed.AppointmentId!.Value,
+                    NewScheduleBlockId: request.NewScheduleBlockId,
+                    AuthenticatedUserId: null,
+                    ExpectedPatientId: consumed.PatientId!.Value,
+                    Reason: request.Reason,
+                    Channel: "public_token"),
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (DuplicateAppointmentException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     private async Task<IActionResult> ConsumeAndDispatchAsync(

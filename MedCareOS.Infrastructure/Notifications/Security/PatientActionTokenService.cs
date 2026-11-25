@@ -311,6 +311,93 @@ public class PatientActionTokenService : IPatientActionTokenService
             WaitingListOfferId: token.WaitingListOfferId);
     }
 
+    public async Task<ActionTokenConsumeResult> ValidateRescheduleTokenAsync(
+        string rawToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryVerifyRawToken(rawToken, out var tokenId, out var tokenHash))
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.InvalidSignatureOrFormat);
+
+        var token = await _dbContext.PatientActionTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.Id == tokenId, cancellationToken);
+
+        var utcNow = DateTimeOffset.UtcNow;
+        var invalidStatus = ValidateTokenState(token, utcNow);
+        if (invalidStatus.HasValue)
+            return new ActionTokenConsumeResult(false, invalidStatus.Value);
+
+        if (token!.ActionScope != PatientActionScope.Reschedule || !token.AppointmentId.HasValue)
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.ScopeNotAllowed);
+
+        var appointment = await _dbContext.Appointments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == token.AppointmentId.Value && a.PatientId == token.PatientId, cancellationToken);
+
+        if (appointment is null ||
+            appointment.Status is not (AppointmentStatus.Scheduled or AppointmentStatus.Confirmed))
+        {
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+        }
+
+        return new ActionTokenConsumeResult(
+            IsSuccess: true,
+            ValidationStatus: ActionTokenValidationStatus.Valid,
+            AppointmentId: token.AppointmentId,
+            PatientId: token.PatientId,
+            NotificationId: token.NotificationId,
+            ExecutedIntent: PatientReplyIntent.Unknown);
+    }
+
+    public async Task<ActionTokenConsumeResult> ConsumeRescheduleTokenAsync(
+        string rawToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryVerifyRawToken(rawToken, out var tokenId, out var tokenHash))
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.InvalidSignatureOrFormat);
+
+        var token = await _tokenRepository.GetByHashAsync(tokenHash, cancellationToken);
+        if (token is null || token.Id != tokenId)
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.NotFound);
+
+        var utcNow = DateTimeOffset.UtcNow;
+        var invalidStatus = ValidateTokenState(token, utcNow);
+        if (invalidStatus.HasValue)
+            return new ActionTokenConsumeResult(false, invalidStatus.Value);
+
+        if (token.ActionScope != PatientActionScope.Reschedule || !token.AppointmentId.HasValue)
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.ScopeNotAllowed);
+
+        var appointment = await _dbContext.Appointments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == token.AppointmentId.Value && a.PatientId == token.PatientId, cancellationToken);
+
+        if (appointment is null ||
+            appointment.Status is not (AppointmentStatus.Scheduled or AppointmentStatus.Confirmed))
+        {
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+        }
+
+        token.MarkUsed("reschedule", utcNow);
+
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AlreadyUsed);
+        }
+
+        return new ActionTokenConsumeResult(
+            IsSuccess: true,
+            ValidationStatus: ActionTokenValidationStatus.Valid,
+            AppointmentId: token.AppointmentId,
+            PatientId: token.PatientId,
+            NotificationId: token.NotificationId,
+            ExecutedIntent: PatientReplyIntent.Unknown);
+    }
+
     private bool TryVerifyRawToken(string rawToken, out Guid tokenId, out string tokenHash)
     {
         tokenId = Guid.Empty;

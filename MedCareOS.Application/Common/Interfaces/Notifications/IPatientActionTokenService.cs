@@ -25,6 +25,14 @@ public interface IPatientActionTokenService
         string rawToken,
         PatientReplyIntent requestedAction,
         CancellationToken cancellationToken = default);
+
+    Task<ActionTokenConsumeResult> ValidateRescheduleTokenAsync(
+        string rawToken,
+        CancellationToken cancellationToken = default);
+
+    Task<ActionTokenConsumeResult> ConsumeRescheduleTokenAsync(
+        string rawToken,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record IssuedActionToken(
