@@ -34,6 +34,19 @@ public class ScheduleBlockRepository : IScheduleBlockRepository
         return await _dbContext.ScheduleBlocks.FirstOrDefaultAsync(sb => sb.Id == scheduleBlockId, cancellationToken);
     }
 
+    public async Task<ScheduleBlock?> GetByIdForUpdateAsync(Guid scheduleBlockId, CancellationToken cancellationToken = default)
+    {
+        if (_dbContext.Database.IsNpgsql())
+        {
+            return await _dbContext.ScheduleBlocks
+                .FromSqlInterpolated($"SELECT * FROM schedule_blocks WHERE id = {scheduleBlockId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return await _dbContext.ScheduleBlocks
+            .FirstOrDefaultAsync(sb => sb.Id == scheduleBlockId, cancellationToken);
+    }
+
     public async Task<ScheduleBlock?> GetOverbookByAppointmentIdAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default)
     {
         return await _dbContext.ScheduleBlocks
@@ -43,6 +56,19 @@ public class ScheduleBlockRepository : IScheduleBlockRepository
 
     public async Task<ScheduleBlock?> GetOverbookByAppointmentIdTrackedAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default)
     {
+        return await _dbContext.ScheduleBlocks
+            .FirstOrDefaultAsync(sb => sb.IsOverbook && sb.SourceAppointmentId == sourceAppointmentId, cancellationToken);
+    }
+
+    public async Task<ScheduleBlock?> GetOverbookByAppointmentIdForUpdateAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default)
+    {
+        if (_dbContext.Database.IsNpgsql())
+        {
+            return await _dbContext.ScheduleBlocks
+                .FromSqlInterpolated($"SELECT * FROM schedule_blocks WHERE is_overbook = true AND source_appointment_id = {sourceAppointmentId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         return await _dbContext.ScheduleBlocks
             .FirstOrDefaultAsync(sb => sb.IsOverbook && sb.SourceAppointmentId == sourceAppointmentId, cancellationToken);
     }

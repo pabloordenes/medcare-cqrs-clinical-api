@@ -2,6 +2,7 @@ using FluentAssertions;
 using MassTransit;
 using MedCareOS.Application.Appointments.Commands.ConfirmAppointment;
 using MedCareOS.Application.Appointments.Commands.DeclineAppointment;
+using MedCareOS.Application.Appointments.Events;
 using MedCareOS.Application.Appointments.Lifecycle;
 using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Notifications.Events;
@@ -302,5 +303,60 @@ public class ConfirmAndDeclineAppointmentTests
             new DeclineAppointmentCommand(appointment.Id, ExpectedPatientId: Guid.NewGuid()),
             ct);
         await wrongPatientAct.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task ConfirmHandle_WhenUnresponsive_LateConfirmation_PublishesLateConfirmationReceived()
+    {
+        var ct = CancellationToken.None;
+        var patientId = Guid.NewGuid();
+        var appointment = Appointment.Create(Guid.NewGuid(), patientId, "Control", "paciente");
+        var now = DateTimeOffset.UtcNow;
+        appointment.MarkFinalConfirmationRequested(now.AddHours(-12));
+        appointment.MarkUnresponsive(now.AddMinutes(-30));
+
+        var appointmentRepo = new Mock<IAppointmentRepository>();
+        appointmentRepo.Setup(r => r.GetAppointmentByIdAsync(appointment.Id, ct)).ReturnsAsync(appointment);
+
+        var lifecyclePlanner = new Mock<IAppointmentLifecyclePlanner>();
+        lifecyclePlanner.Setup(p => p.CancelPendingActionsAsync(appointment.Id, "PatientFinalConfirmed", now, ct)).ReturnsAsync(0);
+
+        var riskSignalProcessor = new Mock<IRiskSignalProcessor>();
+        riskSignalProcessor
+            .Setup(r => r.RecordAsync(It.IsAny<RecordRiskSignalRequest>(), ct))
+            .ReturnsAsync(new RiskSignalApplicationResult(true, false));
+
+        var supersedingService = new Mock<IAiResolutionSupersedingService>();
+        supersedingService.Setup(s => s.SupersedePendingForResourceAsync(appointment.Id, "PatientFinalConfirmed", ct)).ReturnsAsync(0);
+
+        var publishEndpoint = new Mock<IPublishEndpoint>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+
+        var handler = new ConfirmAppointmentCommandHandler(
+            appointmentRepo.Object,
+            lifecyclePlanner.Object,
+            riskSignalProcessor.Object,
+            supersedingService.Object,
+            publishEndpoint.Object,
+            unitOfWork.Object,
+            NullLogger<ConfirmAppointmentCommandHandler>.Instance);
+
+        var correlationId = Guid.NewGuid();
+        var result = await handler.Handle(
+            new ConfirmAppointmentCommand(
+                AppointmentId: appointment.Id,
+                ExpectedPatientId: patientId,
+                OccurredAtUtc: now,
+                CorrelationId: correlationId),
+            ct);
+
+        result.Outcome.Should().Be(ConfirmationTransitionOutcome.FinalConfirmed);
+        publishEndpoint.Verify(p => p.Publish(
+            It.Is<LateConfirmationReceived>(e =>
+                e.AppointmentId == appointment.Id &&
+                e.TenantId == appointment.TenantId &&
+                e.ConfirmedAtUtc == now &&
+                e.CorrelationId == correlationId),
+            ct), Times.Once);
     }
 }

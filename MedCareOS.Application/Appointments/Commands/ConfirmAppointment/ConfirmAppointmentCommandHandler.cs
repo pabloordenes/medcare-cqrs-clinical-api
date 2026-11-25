@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MassTransit;
+using MedCareOS.Application.Appointments.Events;
 using MedCareOS.Application.Appointments.Lifecycle;
 using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Notifications.Events;
@@ -122,6 +123,18 @@ public class ConfirmAppointmentCommandHandler : IRequestHandler<ConfirmAppointme
                     NormalizedKeyword: string.IsNullOrWhiteSpace(request.NormalizedKeyword)
                         ? "CONFIRM"
                         : request.NormalizedKeyword.Trim()),
+                cancellationToken);
+        }
+
+        if (transition.StateChanged &&
+            (transition.PreviousState == ConfirmationState.Unresponsive || appointment.DeadlineMissedAt.HasValue))
+        {
+            await _publishEndpoint.Publish(
+                new LateConfirmationReceived(
+                    AppointmentId: appointment.Id,
+                    TenantId: appointment.TenantId,
+                    ConfirmedAtUtc: appointment.ConfirmedAt ?? utcNow,
+                    CorrelationId: correlationId),
                 cancellationToken);
         }
 

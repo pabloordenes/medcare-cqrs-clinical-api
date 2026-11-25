@@ -101,7 +101,12 @@ public class CustomApiFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             }
 
-            services.AddMassTransitTestHarness();
+            services.AddMassTransitTestHarness(x =>
+            {
+                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(15), testInactivityTimeout: TimeSpan.FromSeconds(2));
+                x.SetKebabCaseEndpointNameFormatter();
+                ConfigureTestMassTransit(x);
+            });
 
             services.Configure<AuthenticationOptions>(options =>
             {
@@ -113,6 +118,10 @@ public class CustomApiFactory : WebApplicationFactory<Program>
             services.AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
         });
+    }
+
+    protected virtual void ConfigureTestMassTransit(IBusRegistrationConfigurator configurator)
+    {
     }
 
     protected override void Dispose(bool disposing)

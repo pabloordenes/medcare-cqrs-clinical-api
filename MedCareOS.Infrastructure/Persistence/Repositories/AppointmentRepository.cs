@@ -25,6 +25,14 @@ public class AppointmentRepository : IAppointmentRepository
         return await _dbContext.Appointments.FirstOrDefaultAsync(x => x.Id == appointmentId, cancellationToken);
     }
 
+    public async Task<Appointment?> GetActiveByScheduleBlockIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Appointments
+            .FirstOrDefaultAsync(
+                a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled,
+                cancellationToken);
+    }
+
     public async Task<int> GetNoShowCountByPatientId(Guid patientId, CancellationToken cancellationToken)
     {
         return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);

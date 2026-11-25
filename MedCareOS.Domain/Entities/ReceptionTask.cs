@@ -71,6 +71,23 @@ public class ReceptionTask
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    public void Escalate(ReceptionTaskPriority priority, string reason, DateTimeOffset? utcNow = null)
+    {
+        EnsureActive();
+
+        if (priority > Priority)
+        {
+            Priority = priority;
+        }
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            Reason = Truncate(reason, MaxReasonLength);
+        }
+
+        UpdatedAt = utcNow ?? DateTimeOffset.UtcNow;
+    }
+
     public void Complete(Guid resolvedByUserId, string? resolutionNotes = null)
     {
         if (resolvedByUserId == Guid.Empty)

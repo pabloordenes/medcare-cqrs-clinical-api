@@ -246,6 +246,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("asistio");
 
+                    b.Property<DateTimeOffset?>("CheckedInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_in_at");
+
                     b.Property<string>("ConfirmationOutcome")
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)")
@@ -270,6 +274,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deadline_missed_at");
 
+                    b.Property<DateTimeOffset?>("DisplacedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("displaced_at");
+
                     b.Property<string>("EffectiveBand")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -282,6 +290,12 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("FinalConfirmationRequestedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("final_confirmation_requested_at");
+
+                    b.Property<bool>("IsDisplacedByOverbook")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_displaced_by_overbook");
 
                     b.Property<string>("LastScoringError")
                         .HasMaxLength(500)
@@ -315,6 +329,10 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<decimal?>("NoShowRiskScore")
                         .HasColumnType("numeric(5,4)")
                         .HasColumnName("score_riesgo");
+
+                    b.Property<DateTimeOffset?>("OfferAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("offer_accepted_at");
 
                     b.Property<bool>("OrchestrationSuppressed")
                         .ValueGeneratedOnAdd()
@@ -382,6 +400,16 @@ namespace MedCareOS.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("WaitingListOfferId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("waiting_list_offer_id");
+
+                    b.Property<bool>("WasEverDisplacedByOverbook")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("was_ever_displaced_by_overbook");
 
                     b.HasKey("Id");
 
@@ -773,6 +801,89 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasDatabaseName("UX_notification_templates_key");
 
                     b.ToTable("notification_templates", (string)null);
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookCollisionEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("DisplacedAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("displaced_appointment_id");
+
+                    b.Property<bool>("IsManualOverride")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_manual_override");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<Guid>("OriginalAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("original_appointment_id");
+
+                    b.Property<Guid?>("OverbookAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overbook_appointment_id");
+
+                    b.Property<Guid>("OverbookBlockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overbook_block_id");
+
+                    b.Property<Guid?>("OverriddenByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overridden_by_user_id");
+
+                    b.Property<string>("OverrideReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("override_reason");
+
+                    b.Property<string>("RuleApplied")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("rule_applied");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TriggerSource")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("trigger_source");
+
+                    b.Property<string>("Winner")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("winner");
+
+                    b.Property<Guid?>("WinnerAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("winner_appointment_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OverbookAppointmentId");
+
+                    b.HasIndex("OverbookBlockId");
+
+                    b.HasIndex("TenantId", "OccurredAtUtc")
+                        .HasDatabaseName("IX_overbook_collision_events_tenant_occurred");
+
+                    b.HasIndex("OriginalAppointmentId", "OverbookBlockId", "TriggerSource")
+                        .HasDatabaseName("IX_overbook_collision_events_lookup");
+
+                    b.ToTable("overbook_collision_events", (string)null);
                 });
 
             modelBuilder.Entity("MedCareOS.Domain.Entities.Patient", b =>
@@ -1647,6 +1758,26 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.HasOne("MedCareOS.Domain.Entities.Patient", null)
                         .WithMany()
                         .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("MedCareOS.Domain.Entities.OverbookCollisionEvent", b =>
+                {
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("OriginalAppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MedCareOS.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("OverbookAppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("MedCareOS.Domain.Entities.ScheduleBlock", null)
+                        .WithMany()
+                        .HasForeignKey("OverbookBlockId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

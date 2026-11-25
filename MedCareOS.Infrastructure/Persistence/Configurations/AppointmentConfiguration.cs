@@ -46,11 +46,33 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(x => x.ConfirmedAt)
             .HasColumnName("confirmed_at");
 
+        builder.Property(x => x.OfferAcceptedAt)
+            .HasColumnName("offer_accepted_at");
+
+        builder.Property(x => x.CheckedInAt)
+            .HasColumnName("checked_in_at");
+
         builder.Property(x => x.FinalConfirmationRequestedAt)
             .HasColumnName("final_confirmation_requested_at");
 
         builder.Property(x => x.DeadlineMissedAt)
             .HasColumnName("deadline_missed_at");
+
+        builder.Property(x => x.IsDisplacedByOverbook)
+            .HasColumnName("is_displaced_by_overbook")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(x => x.WasEverDisplacedByOverbook)
+            .HasColumnName("was_ever_displaced_by_overbook")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(x => x.DisplacedAt)
+            .HasColumnName("displaced_at");
+
+        builder.Property(x => x.WaitingListOfferId)
+            .HasColumnName("waiting_list_offer_id");
 
         builder.Property(x => x.ConfirmationOutcome)
             .HasColumnName("confirmation_outcome")
