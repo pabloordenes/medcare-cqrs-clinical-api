@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using MassTransit;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
@@ -117,8 +118,10 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
             ["previous_absences"] = previousAbsences.ToString(CultureInfo.InvariantCulture),
             ["trigger_source"] = string.IsNullOrWhiteSpace(context.TriggerSource) ? "system" : context.TriggerSource.Trim(),
             ["final_notification_delivered"] = finalNotificationDelivered ? "true" : "false",
+            ["final_notice_status"] = finalConfirmation?.Status.ToString() ?? "None",
             ["clinical_exclusion"] = exclusion.IsExcluded ? "true" : "false",
             ["clinical_exclusion_code"] = exclusion.Code,
+            ["clinical_flags"] = exclusion.IsExcluded ? JsonSerializer.Serialize(new[] { exclusion.Code }) : "[]",
             ["auto_overbook_enabled"] = policy.AutoOverbookEnabled ? "true" : "false"
         };
 
