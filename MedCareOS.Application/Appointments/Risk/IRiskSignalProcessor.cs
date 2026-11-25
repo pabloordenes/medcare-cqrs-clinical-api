@@ -12,7 +12,8 @@ public sealed record RecordRiskSignalRequest(
     decimal? WeightOverride = null,
     string? MetadataJson = null,
     bool CreateFailedDeliveryReceptionTask = false,
-    string? ReceptionTaskReason = null);
+    string? ReceptionTaskReason = null,
+    bool SuppressBandEscalationEvent = false);
 
 public sealed record RiskSignalApplicationResult(
     bool Applied,
@@ -22,7 +23,8 @@ public sealed record RiskSignalApplicationResult(
     decimal? NewEffectiveScore = null,
     RiskBandLevel? PreviousBand = null,
     RiskBandLevel? NewBand = null,
-    bool ReceptionTaskCreated = false);
+    bool ReceptionTaskCreated = false,
+    bool RiskEscalatedEventPublished = false);
 
 public interface IRiskSignalProcessor
 {

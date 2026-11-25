@@ -16,6 +16,7 @@ public class ProcessProviderDeliveryStatusCommandHandler : IRequestHandler<Proce
     private readonly IApplicationDbContext _dbContext;
     private readonly INotificationRepository _notificationRepository;
     private readonly IRiskSignalProcessor _riskSignalProcessor;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ISender _sender;
     private readonly ILogger<ProcessProviderDeliveryStatusCommandHandler> _logger;
 
@@ -23,12 +24,14 @@ public class ProcessProviderDeliveryStatusCommandHandler : IRequestHandler<Proce
         IApplicationDbContext dbContext,
         INotificationRepository notificationRepository,
         IRiskSignalProcessor riskSignalProcessor,
+        IUnitOfWork unitOfWork,
         ISender sender,
         ILogger<ProcessProviderDeliveryStatusCommandHandler> logger)
     {
         _dbContext = dbContext;
         _notificationRepository = notificationRepository;
         _riskSignalProcessor = riskSignalProcessor;
+        _unitOfWork = unitOfWork;
         _sender = sender;
         _logger = logger;
     }
@@ -99,7 +102,7 @@ public class ProcessProviderDeliveryStatusCommandHandler : IRequestHandler<Proce
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {

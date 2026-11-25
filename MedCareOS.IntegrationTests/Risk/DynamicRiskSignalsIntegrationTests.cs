@@ -524,6 +524,7 @@ public class DynamicRiskSignalsIntegrationTests
             services.AddScoped<IPatientActionTokenService, PatientActionTokenService>();
             services.AddScoped<IAppointmentLifecyclePlanner, AppointmentLifecyclePlanner>();
             services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
+            services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
             services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
             services.AddSingleton<IScheduledActionsProcessor, ScheduledActionsProcessor>();
             services.AddSingleton(aiService);
