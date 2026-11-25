@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ReceptionTask> ReceptionTasks { get; set; }
     public DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; set; }
     public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
+    public DbSet<OverbookCollisionEvent> OverbookCollisionEvents { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

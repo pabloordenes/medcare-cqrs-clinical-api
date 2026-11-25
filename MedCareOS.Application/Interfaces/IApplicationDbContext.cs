@@ -21,6 +21,7 @@ public interface IApplicationDbContext
     DbSet<NotificationTemplate> NotificationTemplates { get; }
     DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; }
     DbSet<ProcessedMessage> ProcessedMessages { get; }
+    DbSet<OverbookCollisionEvent> OverbookCollisionEvents { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

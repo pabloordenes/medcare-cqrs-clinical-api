@@ -7,16 +7,19 @@ using MedCareOS.Api.BackgroundServices;
 using MedCareOS.Api.Security;
 using MedCareOS.Application.Appointments.Consumers;
 using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Appointments.Overbooking;
 using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Appointments.Workers;
 using MedCareOS.Application.Common.Interfaces;
 using MedCareOS.Application.Common.Interfaces.Notifications;
 using MedCareOS.Application.Common.Options;
+using MedCareOS.Application.Common.Persistence;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Application.Notifications.Consumers;
 using MedCareOS.Application.Notifications.Services;
 using MedCareOS.Application.Notifications.Templates;
 using MedCareOS.Application.Resolutions.Services;
+using MedCareOS.Application.WaitingLists.Services;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using MedCareOS.Infrastructure.Configuration;
@@ -87,6 +90,7 @@ builder.Services.AddMassTransit(x =>
     x.SetKebabCaseEndpointNameFormatter();
     x.AddConsumer<ScoreAppointmentConsumer, ScoreAppointmentConsumerDefinition>();
     x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
+    x.AddConsumer<LateConfirmationReceivedConsumer, LateConfirmationReceivedConsumerDefinition>();
 
     x.AddEntityFrameworkOutbox<ApplicationDbContext>(o =>
     {
@@ -260,11 +264,15 @@ builder.Services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
 builder.Services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
 builder.Services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
 builder.Services.AddSingleton<IScheduledActionsProcessor, ScheduledActionsProcessor>();
+builder.Services.AddScoped<ITransactionalExecutor, EfTransactionalExecutor>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+builder.Services.AddScoped<IOverbookCollisionEventRepository, OverbookCollisionEventRepository>();
+builder.Services.AddScoped<IWaitingListOfferCancellationService, NoOpWaitingListOfferCancellationService>();
+builder.Services.AddScoped<IOverbookCollisionResolutionService, OverbookCollisionResolutionService>();
 builder.Services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
 builder.Services.AddScoped<IAiResolutionSupersedingService, AiResolutionSupersedingService>();
 builder.Services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();

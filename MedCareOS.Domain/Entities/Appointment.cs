@@ -15,8 +15,14 @@ public class Appointment
     public ConfirmationState ConfirmationState { get; private set; } = ConfirmationState.Pending;
     public bool OrchestrationSuppressed { get; private set; }
     public DateTimeOffset? ConfirmedAt { get; private set; }
+    public DateTimeOffset? OfferAcceptedAt { get; private set; }
+    public DateTimeOffset? CheckedInAt { get; private set; }
     public DateTimeOffset? FinalConfirmationRequestedAt { get; private set; }
     public DateTimeOffset? DeadlineMissedAt { get; private set; }
+    public bool IsDisplacedByOverbook { get; private set; }
+    public bool WasEverDisplacedByOverbook { get; private set; }
+    public DateTimeOffset? DisplacedAt { get; private set; }
+    public Guid? WaitingListOfferId { get; private set; }
     public ConfirmationAttendanceOutcome? ConfirmationOutcome { get; private set; }
     public string SymptomsRaw { get; private set; } = string.Empty;
     public string? ProcessedSymptoms { get; private set; }
@@ -43,6 +49,8 @@ public class Appointment
 
     public bool IsPatientConfirmed =>
         ConfirmationState is ConfirmationState.ConfirmedEarly or ConfirmationState.FinalConfirmed;
+
+    public DateTimeOffset? OverbookConfirmationInstant => OfferAcceptedAt ?? ConfirmedAt;
 
     private Appointment() { } // ef
 
@@ -113,6 +121,35 @@ public class Appointment
             initialNlpStatus,
             schedulingSource,
             null);
+    }
+
+    public static Appointment CreateFromWaitingListOffer(
+        Guid scheduleBlockId,
+        Guid patientId,
+        Guid waitingListOfferId,
+        DateTimeOffset offerAcceptedAtUtc,
+        string symptomsRaw,
+        string schedulingSource = "lista_espera",
+        Guid? tenantId = null,
+        bool confirmImmediately = true)
+    {
+        if (waitingListOfferId == Guid.Empty)
+            throw new ArgumentException("WaitingListOfferId no puede estar vacío.", nameof(waitingListOfferId));
+
+        var appointment = Create(scheduleBlockId, patientId, symptomsRaw, schedulingSource, tenantId);
+        appointment.WaitingListOfferId = waitingListOfferId;
+        appointment.OfferAcceptedAt = offerAcceptedAtUtc;
+
+        if (confirmImmediately)
+        {
+            appointment.Status = AppointmentStatus.Confirmed;
+            appointment.ConfirmationState = ConfirmationState.FinalConfirmed;
+            appointment.ConfirmedAt = offerAcceptedAtUtc;
+            appointment.OrchestrationSuppressed = true;
+        }
+
+        appointment.UpdatedAt = offerAcceptedAtUtc;
+        return appointment;
     }
 
     public void Confirm()
@@ -298,6 +335,9 @@ public class Appointment
     }
 
     public void CheckIn()
+        => CheckIn(DateTimeOffset.UtcNow);
+
+    public void CheckIn(DateTimeOffset utcNow)
     {
         if (Status is not AppointmentStatus.Scheduled and not AppointmentStatus.Confirmed)
             throw new InvalidOperationException($"No se puede registrar check-in para una cita en estado '{Status}'.");
@@ -305,8 +345,26 @@ public class Appointment
         Status = AppointmentStatus.Confirmed;
         ActualAttendance = true;
         OrchestrationSuppressed = true;
+        CheckedInAt ??= utcNow;
         UpdateConfirmationOutcome(attended: true);
-        UpdatedAt = DateTimeOffset.UtcNow;
+        UpdatedAt = utcNow;
+    }
+
+    public void MarkDisplacedByOverbook(DateTimeOffset utcNow)
+    {
+        if (Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished)
+            throw new InvalidOperationException($"No se puede marcar desplazamiento por sobrecupo en una cita en estado '{Status}'.");
+
+        IsDisplacedByOverbook = true;
+        WasEverDisplacedByOverbook = true;
+        DisplacedAt ??= utcNow;
+        UpdatedAt = utcNow;
+    }
+
+    public void ClearDisplacedByOverbook(DateTimeOffset utcNow)
+    {
+        IsDisplacedByOverbook = false;
+        UpdatedAt = utcNow;
     }
 
     public void StartConsultation()

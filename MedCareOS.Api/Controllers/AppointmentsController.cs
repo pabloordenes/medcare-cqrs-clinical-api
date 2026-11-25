@@ -8,6 +8,7 @@ using MedCareOS.Application.Appointments.Commands.FinishConsultation;
 using MedCareOS.Application.Appointments.Commands.GenerateOverbook;
 using MedCareOS.Application.Appointments.Commands.MarkNoShowAppointment;
 using MedCareOS.Application.Appointments.Commands.MonitorAppointment;
+using MedCareOS.Application.Appointments.Commands.OverrideOverbookPriority;
 using MedCareOS.Application.Appointments.Commands.StartConsultation;
 using MedCareOS.Application.Appointments.Queries.GetDailyAppointments;
 using MedCareOS.Domain.Enums;
@@ -231,6 +232,43 @@ public class AppointmentsController : ControllerBase
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { message = ex.Message });
+        }
+    }
+
+    public record OverrideOverbookCollisionDto(Guid WinnerAppointmentId, string Reason);
+
+    [Authorize(Roles = "Recepcionista,Administrador")]
+    [HttpPost("{id:guid}/overbook-collision/override")]
+    public async Task<IActionResult> OverrideOverbookCollision(
+        [FromRoute] Guid id,
+        [FromBody] OverrideOverbookCollisionDto payload,
+        CancellationToken cancellationToken)
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!Guid.TryParse(sub, out var userId) || userId == Guid.Empty)
+            return Forbid();
+
+        if (payload is null)
+            return BadRequest(new { message = "Solicitud inválida." });
+
+        try
+        {
+            var result = await _sender.Send(
+                new OverrideOverbookPriorityCommand(id, payload.WinnerAppointmentId, payload.Reason, userId),
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
         }
     }
 }
