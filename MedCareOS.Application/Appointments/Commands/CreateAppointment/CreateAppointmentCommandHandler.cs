@@ -22,6 +22,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly IUnitOfWork _unitOfWork;
     private readonly IScheduleBlockRepository _scheduleBlockRepository;
     private readonly IStaffRepository _staffRepository;
+    private readonly IBoxRepository _boxRepository;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly INotificationOutboxService _notificationOutboxService;
     private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
@@ -33,6 +34,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         IUnitOfWork unitOfWork,
         IScheduleBlockRepository scheduleBlockRepository,
         IStaffRepository staffRepository,
+        IBoxRepository boxRepository,
         IPublishEndpoint publishEndpoint,
         INotificationOutboxService notificationOutboxService,
         IAppointmentLifecyclePlanner lifecyclePlanner,
@@ -43,6 +45,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         _unitOfWork = unitOfWork;
         _scheduleBlockRepository = scheduleBlockRepository;
         _staffRepository = staffRepository;
+        _boxRepository = boxRepository;
         _publishEndpoint = publishEndpoint;
         _notificationOutboxService = notificationOutboxService;
         _lifecyclePlanner = lifecyclePlanner;
@@ -70,6 +73,19 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
 
         var scheduleBlock = await _scheduleBlockRepository.GetByIdAsync(request.ScheduleBlockId, cancellationToken);
         if (scheduleBlock == null) throw new InvalidOperationException("El bloque horario no existe.");
+
+        if (scheduleBlock.IsOverbook && !request.AllowOverbookBlock)
+            throw new DuplicateAppointmentException("No se puede agendar directamente sobre un bloque de sobrecupo.");
+
+        if (scheduleBlock.IsOverbook && !scheduleBlock.IsAvailableForBackfillOffer)
+            throw new DuplicateAppointmentException("El bloque de sobrecupo seleccionado ya no se encuentra disponible.");
+
+        if (scheduleBlock.StartTime <= DateTime.UtcNow)
+            throw new InvalidOperationException("No puedes agendar una cita en un bloque horario pasado.");
+
+        var box = await _boxRepository.GetByIdAsync(scheduleBlock.BoxId, cancellationToken);
+        if (box is null || !box.IsActive)
+            throw new InvalidOperationException("El box asignado al bloque horario no existe o está inactivo.");
 
         var blockOccupied = await _appointmentRepository.HasActiveAppointmentForBlockAsync(request.ScheduleBlockId, cancellationToken);
         if (blockOccupied)

@@ -25,6 +25,10 @@ public class TenantConfirmationPolicyConfiguration : IEntityTypeConfiguration<Te
             t.HasCheckConstraint(
                 "CK_tenant_confirmation_policies_quiet_hours",
                 "(quiet_hours_start_local IS NULL AND quiet_hours_end_local IS NULL) OR (quiet_hours_start_local IS NOT NULL AND quiet_hours_end_local IS NOT NULL AND quiet_hours_start_local <> quiet_hours_end_local)");
+
+            t.HasCheckConstraint(
+                "CK_tenant_confirmation_policies_overbook",
+                "hitl_overbook_min_effective_score > 0 AND hitl_overbook_min_effective_score < auto_overbook_min_effective_score AND auto_overbook_min_effective_score < 1 AND excluded_senior_age_years BETWEEN 18 AND 120 AND waiting_list_offer_ttl_minutes > 0 AND max_waiting_list_cascade_offers >= 1 AND min_lead_minutes_for_waiting_list_offer >= 0 AND max_reschedules_per_appointment >= 0 AND min_shadow_evaluations_for_activation >= 1 AND max_false_positive_rate_for_activation > 0 AND max_false_positive_rate_for_activation < 1");
         });
 
         builder.HasKey(x => x.TenantId);
@@ -137,6 +141,71 @@ public class TenantConfirmationPolicyConfiguration : IEntityTypeConfiguration<Te
         builder.Property(x => x.HighEnterThreshold)
             .HasColumnName("high_enter_threshold")
             .HasColumnType("numeric(5,4)")
+            .IsRequired();
+
+        builder.Property(x => x.AutoOverbookEnabled)
+            .HasColumnName("auto_overbook_enabled")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(x => x.AutoOverbookMinEffectiveScore)
+            .HasColumnName("auto_overbook_min_effective_score")
+            .HasColumnType("numeric(5,4)")
+            .HasDefaultValue(0.8500m)
+            .IsRequired();
+
+        builder.Property(x => x.HitlOverbookMinEffectiveScore)
+            .HasColumnName("hitl_overbook_min_effective_score")
+            .HasColumnType("numeric(5,4)")
+            .HasDefaultValue(0.5000m)
+            .IsRequired();
+
+        builder.Property(x => x.ExcludedSeniorAgeYears)
+            .HasColumnName("excluded_senior_age_years")
+            .HasDefaultValue(70)
+            .IsRequired();
+
+        builder.Property(x => x.ExcludedClinicalSpecialtiesJson)
+            .HasColumnName("excluded_clinical_specialties_json")
+            .HasColumnType("jsonb")
+            .HasDefaultValue(TenantConfirmationPolicy.DefaultExcludedClinicalSpecialtiesJson)
+            .IsRequired();
+
+        builder.Property(x => x.ExcludedClinicalKeywordsJson)
+            .HasColumnName("excluded_clinical_keywords_json")
+            .HasColumnType("jsonb")
+            .HasDefaultValue(TenantConfirmationPolicy.DefaultExcludedClinicalKeywordsJson)
+            .IsRequired();
+
+        builder.Property(x => x.WaitingListOfferTtlMinutes)
+            .HasColumnName("waiting_list_offer_ttl_minutes")
+            .HasDefaultValue(60)
+            .IsRequired();
+
+        builder.Property(x => x.MaxWaitingListCascadeOffers)
+            .HasColumnName("max_waiting_list_cascade_offers")
+            .HasDefaultValue(5)
+            .IsRequired();
+
+        builder.Property(x => x.MinLeadMinutesForWaitingListOffer)
+            .HasColumnName("min_lead_minutes_for_waiting_list_offer")
+            .HasDefaultValue(60)
+            .IsRequired();
+
+        builder.Property(x => x.MaxReschedulesPerAppointment)
+            .HasColumnName("max_reschedules_per_appointment")
+            .HasDefaultValue(3)
+            .IsRequired();
+
+        builder.Property(x => x.MinShadowEvaluationsForActivation)
+            .HasColumnName("min_shadow_evaluations_for_activation")
+            .HasDefaultValue(200)
+            .IsRequired();
+
+        builder.Property(x => x.MaxFalsePositiveRateForActivation)
+            .HasColumnName("max_false_positive_rate_for_activation")
+            .HasColumnType("numeric(5,4)")
+            .HasDefaultValue(0.1500m)
             .IsRequired();
 
         builder.Property(x => x.CreatedAt)

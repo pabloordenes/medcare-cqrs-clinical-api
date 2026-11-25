@@ -24,6 +24,9 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
                 where block.StaffId == request.MedicoId
                     && block.StartTime >= inicioDiaUtc
                     && block.EndTime < finDiaUtc
+                    && (!block.IsOverbook ||
+                        (block.OverbookStatus != OverbookBlockStatus.Deactivated &&
+                         block.OverbookStatus != OverbookBlockStatus.Expired))
 
                 join app in _dbContext.Appointments on block.Id equals app.ScheduleBlockId into appGroup
 
@@ -42,7 +45,9 @@ namespace MedCareOS.Application.Appointments.Queries.GetDailyAgenda
                     activeApp != null ? "ocupada" : "libre",
                     activeApp != null ? activeApp.Id : null,
                     patient != null ? patient.FirstName + " " + patient.LastName : null,
-                    activeApp != null && activeApp.NlpStatus == NlpStatus.Completed ? activeApp.NlpSummary : null
+                    activeApp != null && activeApp.NlpStatus == NlpStatus.Completed ? activeApp.NlpSummary : null,
+                    block.IsOverbook,
+                    block.IsOverbook ? block.OverbookStatus.ToString() : null
                     )
                 )
                 .AsNoTracking()

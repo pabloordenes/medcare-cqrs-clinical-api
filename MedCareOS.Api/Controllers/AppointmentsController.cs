@@ -36,7 +36,7 @@ public class AppointmentsController : ControllerBase
     public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentCommand command,
         CancellationToken cancellationToken)
     {
-        var effectiveCommand = command with { AuthenticatedUserId = null };
+        var effectiveCommand = command with { AuthenticatedUserId = null, AllowOverbookBlock = false };
 
         if (User.IsInRole(nameof(UserRole.Paciente)) ||
             (!User.IsInRole(nameof(UserRole.Recepcionista)) && !User.IsInRole(nameof(UserRole.Administrador))))
@@ -45,7 +45,7 @@ public class AppointmentsController : ControllerBase
             if (!Guid.TryParse(sub, out var userId))
                 return Forbid();
 
-            effectiveCommand = command with { AuthenticatedUserId = userId };
+            effectiveCommand = command with { AuthenticatedUserId = userId, AllowOverbookBlock = false };
         }
 
         try
@@ -54,6 +54,10 @@ public class AppointmentsController : ControllerBase
             return Ok(appointmentId);
         }
         catch (DuplicateAppointmentException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
         {
             return Conflict(new { message = ex.Message });
         }
@@ -141,21 +145,65 @@ public class AppointmentsController : ControllerBase
         return Ok(result);
     }
     
-    public record OverbookPayloadDto(Guid ResourceId, decimal TargetRisk, bool AutoApprove);
+    public record OverbookPayloadDto(
+        Guid ResourceId,
+        string? Reason = null,
+        Guid? CorrelationId = null,
+        OverbookDecisionMode? DecisionMode = null,
+        decimal? TargetRisk = null,
+        bool? AutoApprove = null);
 
     [Authorize(Policy = "OmroService")]
     [TypeFilter(typeof(IdempotencyKeyFilter))]
     [HttpPost("overbook")]
     public async Task<IActionResult> GenerateOverbookWebhook([FromBody] OverbookPayloadDto payload, CancellationToken cancellationToken)
     {
-        var command = new GenerateOverbookCommand(payload.ResourceId, payload.TargetRisk, payload.AutoApprove);
-    
+        var resolvedMode = payload.DecisionMode ??
+            (payload.AutoApprove == true ? OverbookDecisionMode.Autonomous : OverbookDecisionMode.Approved);
+
+        var command = new GenerateOverbookCommand(
+            ResourceId: payload.ResourceId,
+            Reason: payload.Reason,
+            CorrelationId: payload.CorrelationId,
+            DecisionMode: resolvedMode,
+            TargetRisk: payload.TargetRisk);
+
         var result = await _sender.Send(command, cancellationToken);
 
-        if (result)
-            return Ok(new { message = "Sobrecupo generado exitosamente en MedCareOS." });
-
-        return BadRequest("No se pudo generar el sobrecupo debido a datos inválidos o faltantes.");
+        return result.Outcome switch
+        {
+            GenerateOverbookOutcome.Created or GenerateOverbookOutcome.AlreadyExists => Ok(new
+            {
+                status = result.Outcome == GenerateOverbookOutcome.Created ? "Created" : "AlreadyExists",
+                overbookBlockId = result.OverbookBlockId,
+                sourceAppointmentId = result.SourceAppointmentId,
+                decisionMode = result.DecisionMode,
+                idempotentReplay = result.IsIdempotentReplay,
+                correlationId = result.CorrelationId,
+                message = result.Message
+            }),
+            GenerateOverbookOutcome.AppointmentNotFound => NotFound(new
+            {
+                code = result.ErrorCode,
+                message = result.Message,
+                resourceId = result.SourceAppointmentId
+            }),
+            GenerateOverbookOutcome.AppointmentAlreadyConfirmed
+                or GenerateOverbookOutcome.AppointmentInvalidState
+                or GenerateOverbookOutcome.OverbookBlockDeactivated => Conflict(new
+            {
+                code = result.ErrorCode,
+                message = result.Message,
+                resourceId = result.SourceAppointmentId
+            }),
+            _ => UnprocessableEntity(new
+            {
+                code = result.ErrorCode,
+                message = result.Message,
+                resourceId = result.SourceAppointmentId,
+                receptionTaskId = result.ReceptionTaskId
+            })
+        };
     }
     
     public record MonitorPayloadDto(

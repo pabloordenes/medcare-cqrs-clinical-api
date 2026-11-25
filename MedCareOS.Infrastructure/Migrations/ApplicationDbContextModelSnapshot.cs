@@ -1005,6 +1005,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("endpoint");
 
+                    b.Property<string>("ResponseBodyJson")
+                        .HasColumnType("text")
+                        .HasColumnName("response_body_json");
+
+                    b.Property<int?>("ResponseStatusCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("response_status_code");
+
                     b.HasKey("Key");
 
                     b.ToTable("idempotency_keys", (string)null);
@@ -1172,6 +1180,20 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("box_id");
 
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_stamp");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at");
+
+                    b.Property<string>("DeactivationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("deactivation_reason");
+
                     b.Property<DateTime>("EndTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_fin");
@@ -1181,6 +1203,18 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("is_overbook");
+
+                    b.Property<Guid?>("OccupiedAppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("occupied_appointment_id");
+
+                    b.Property<string>("OverbookStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("None")
+                        .HasColumnName("overbook_status");
 
                     b.PrimitiveCollection<int[]>("RuleDaysOfWeek")
                         .HasColumnType("integer[]")
@@ -1218,9 +1252,14 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_inicio");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("BoxId");
+                    b.HasIndex("BoxId")
+                        .HasDatabaseName("IX_schedule_blocks_box_id");
 
                     b.HasIndex("SourceAppointmentId")
                         .IsUnique()
@@ -1228,6 +1267,10 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasFilter("source_appointment_id IS NOT NULL");
 
                     b.HasIndex("StaffId");
+
+                    b.HasIndex("BoxId", "StartTime", "EndTime")
+                        .HasDatabaseName("IX_schedule_blocks_active_overbooks_box_slot")
+                        .HasFilter("is_overbook = true AND overbook_status IN ('Open', 'Offered', 'Occupied')");
 
                     b.ToTable("schedule_blocks", (string)null);
                 });
@@ -1294,6 +1337,18 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("alternate_channel_strategy");
 
+                    b.Property<bool>("AutoOverbookEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("auto_overbook_enabled");
+
+                    b.Property<decimal>("AutoOverbookMinEffectiveScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,4)")
+                        .HasDefaultValue(0.8500m)
+                        .HasColumnName("auto_overbook_min_effective_score");
+
                     b.Property<bool>("CountSentAsDeliveredForUnanswered")
                         .HasColumnType("boolean")
                         .HasColumnName("count_sent_as_delivered_for_unanswered");
@@ -1310,6 +1365,26 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("enable_rescore_at_reminder2");
 
+                    b.Property<string>("ExcludedClinicalKeywordsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[\"pre-operatorio\",\"preoperatorio\",\"cirugia\",\"embarazo alto riesgo\"]")
+                        .HasColumnName("excluded_clinical_keywords_json");
+
+                    b.Property<string>("ExcludedClinicalSpecialtiesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[\"oncologia\",\"preoperatorio\",\"cirugia\"]")
+                        .HasColumnName("excluded_clinical_specialties_json");
+
+                    b.Property<int>("ExcludedSeniorAgeYears")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(70)
+                        .HasColumnName("excluded_senior_age_years");
+
                     b.Property<int>("FinalConfirmationOffsetHours")
                         .HasColumnType("integer")
                         .HasColumnName("final_confirmation_offset_hours");
@@ -1322,9 +1397,33 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("numeric(5,4)")
                         .HasColumnName("high_exit_threshold");
 
+                    b.Property<decimal>("HitlOverbookMinEffectiveScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,4)")
+                        .HasDefaultValue(0.5000m)
+                        .HasColumnName("hitl_overbook_min_effective_score");
+
+                    b.Property<decimal>("MaxFalsePositiveRateForActivation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,4)")
+                        .HasDefaultValue(0.1500m)
+                        .HasColumnName("max_false_positive_rate_for_activation");
+
                     b.Property<decimal>("MaxReminderUnansweredCumulative")
                         .HasColumnType("numeric(6,4)")
                         .HasColumnName("max_reminder_unanswered_cumulative");
+
+                    b.Property<int>("MaxReschedulesPerAppointment")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3)
+                        .HasColumnName("max_reschedules_per_appointment");
+
+                    b.Property<int>("MaxWaitingListCascadeOffers")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(5)
+                        .HasColumnName("max_waiting_list_cascade_offers");
 
                     b.Property<decimal>("MediumEnterThreshold")
                         .HasColumnType("numeric(5,4)")
@@ -1333,6 +1432,18 @@ namespace MedCareOS.Infrastructure.Migrations
                     b.Property<decimal>("MediumExitThreshold")
                         .HasColumnType("numeric(5,4)")
                         .HasColumnName("medium_exit_threshold");
+
+                    b.Property<int>("MinLeadMinutesForWaitingListOffer")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(60)
+                        .HasColumnName("min_lead_minutes_for_waiting_list_offer");
+
+                    b.Property<int>("MinShadowEvaluationsForActivation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(200)
+                        .HasColumnName("min_shadow_evaluations_for_activation");
 
                     b.Property<int>("MinimumDelayAfterCreationMinutes")
                         .HasColumnType("integer")
@@ -1374,6 +1485,12 @@ namespace MedCareOS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<int>("WaitingListOfferTtlMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(60)
+                        .HasColumnName("waiting_list_offer_ttl_minutes");
+
                     b.Property<decimal>("WeightConfirmedEarly")
                         .HasColumnType("numeric(6,4)")
                         .HasColumnName("weight_confirmed_early");
@@ -1401,6 +1518,8 @@ namespace MedCareOS.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_tenant_confirmation_policies_hysteresis", "medium_exit_threshold > 0 AND medium_exit_threshold < medium_enter_threshold AND medium_enter_threshold < high_exit_threshold AND high_exit_threshold < high_enter_threshold AND high_enter_threshold < 1");
 
                             t.HasCheckConstraint("CK_tenant_confirmation_policies_offsets", "reminder1_offset_hours > reminder2_offset_hours AND reminder2_offset_hours > final_confirmation_offset_hours AND final_confirmation_offset_hours > deadline_offset_hours AND deadline_offset_hours > 0 AND minimum_delay_after_creation_minutes >= 0 AND same_day_reminder_min_lead_hours >= 0 AND same_day_reminder_min_lead_hours <= deadline_offset_hours");
+
+                            t.HasCheckConstraint("CK_tenant_confirmation_policies_overbook", "hitl_overbook_min_effective_score > 0 AND hitl_overbook_min_effective_score < auto_overbook_min_effective_score AND auto_overbook_min_effective_score < 1 AND excluded_senior_age_years BETWEEN 18 AND 120 AND waiting_list_offer_ttl_minutes > 0 AND max_waiting_list_cascade_offers >= 1 AND min_lead_minutes_for_waiting_list_offer >= 0 AND max_reschedules_per_appointment >= 0 AND min_shadow_evaluations_for_activation >= 1 AND max_false_positive_rate_for_activation > 0 AND max_false_positive_rate_for_activation < 1");
 
                             t.HasCheckConstraint("CK_tenant_confirmation_policies_quiet_hours", "(quiet_hours_start_local IS NULL AND quiet_hours_end_local IS NULL) OR (quiet_hours_start_local IS NOT NULL AND quiet_hours_end_local IS NOT NULL AND quiet_hours_start_local <> quiet_hours_end_local)");
 

@@ -8,4 +8,6 @@ public interface IScheduleBlockRepository
     void AddRange(IEnumerable<ScheduleBlock> scheduleBlock);
     Task<ScheduleBlock?> GetByIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken);
     Task<ScheduleBlock?> GetOverbookByAppointmentIdAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default);
+    Task<ScheduleBlock?> GetOverbookByAppointmentIdTrackedAsync(Guid sourceAppointmentId, CancellationToken cancellationToken = default);
+    Task<int> CountActiveOverbooksForBoxSlotAsync(Guid boxId, DateTime startTime, DateTime endTime, CancellationToken cancellationToken = default);
 }

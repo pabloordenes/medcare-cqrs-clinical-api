@@ -34,6 +34,19 @@ public class ReceptionTaskRepository : IReceptionTaskRepository
                 cancellationToken);
     }
 
+    public async Task<ReceptionTask?> GetActiveTaskAsync(
+        Guid appointmentId,
+        ReceptionTaskType taskType,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.ReceptionTasks
+            .FirstOrDefaultAsync(
+                t => t.AppointmentId == appointmentId
+                     && t.TaskType == taskType
+                     && (t.Status == ReceptionTaskStatus.Open || t.Status == ReceptionTaskStatus.InProgress),
+                cancellationToken);
+    }
+
     public async Task AddAsync(ReceptionTask task, CancellationToken cancellationToken = default)
     {
         await _dbContext.ReceptionTasks.AddAsync(task, cancellationToken);

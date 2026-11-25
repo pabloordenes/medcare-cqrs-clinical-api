@@ -32,6 +32,7 @@ public class CreateAppointmentCommandHandlerTests
             new TimeOnly(9, 0), new TimeOnly(9, 30), [DateTime.UtcNow.DayOfWeek]);
         var staff = Staff.Create(
             Guid.NewGuid(), "Carlos", "Medico", "9.876.543-2", "Medicina General", "Doctor", "+56987654321");
+        var box = Box.Create("Box 1", "Consulta", 1, "1");
 
         var command = new CreateAppointmentCommand(scheduleBlockId, patientId, "Dolor de cabeza intenso", "paciente");
         Appointment? addedAppointment = null;
@@ -57,6 +58,9 @@ public class CreateAppointmentCommandHandlerTests
 
         var staffRepository = new Mock<IStaffRepository>();
         staffRepository.Setup(r => r.GetByIdAsync(staffId, cancellationToken)).ReturnsAsync(staff);
+
+        var boxRepository = new Mock<IBoxRepository>();
+        boxRepository.Setup(r => r.GetByIdAsync(scheduleBlock.BoxId, cancellationToken)).ReturnsAsync(box);
 
         var publishEndpoint = new Mock<IPublishEndpoint>();
         publishEndpoint
@@ -95,6 +99,7 @@ public class CreateAppointmentCommandHandlerTests
             unitOfWork.Object,
             scheduleBlockRepository.Object,
             staffRepository.Object,
+            boxRepository.Object,
             publishEndpoint.Object,
             notificationOutboxService.Object,
             lifecyclePlanner.Object,
@@ -156,6 +161,7 @@ public class CreateAppointmentCommandHandlerTests
             unitOfWork.Object,
             Mock.Of<IScheduleBlockRepository>(),
             Mock.Of<IStaffRepository>(),
+            Mock.Of<IBoxRepository>(),
             publishEndpoint.Object,
             notificationOutboxService.Object,
             lifecyclePlanner.Object,
@@ -202,6 +208,10 @@ public class CreateAppointmentCommandHandlerTests
         var scheduleBlockRepository = new Mock<IScheduleBlockRepository>();
         scheduleBlockRepository.Setup(r => r.GetByIdAsync(scheduleBlockId, cancellationToken)).ReturnsAsync(scheduleBlock);
 
+        var boxRepository = new Mock<IBoxRepository>();
+        boxRepository.Setup(r => r.GetByIdAsync(scheduleBlock.BoxId, cancellationToken))
+            .ReturnsAsync(Box.Create("Box 1", "Consulta", 1, "1"));
+
         var publishEndpoint = new Mock<IPublishEndpoint>();
         var notificationOutboxService = new Mock<INotificationOutboxService>();
         var lifecyclePlanner = new Mock<IAppointmentLifecyclePlanner>();
@@ -213,6 +223,7 @@ public class CreateAppointmentCommandHandlerTests
             unitOfWork.Object,
             scheduleBlockRepository.Object,
             Mock.Of<IStaffRepository>(),
+            boxRepository.Object,
             publishEndpoint.Object,
             notificationOutboxService.Object,
             lifecyclePlanner.Object,

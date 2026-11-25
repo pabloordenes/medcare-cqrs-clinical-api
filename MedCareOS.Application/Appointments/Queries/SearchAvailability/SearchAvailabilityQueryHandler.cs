@@ -17,6 +17,7 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
 
         public async Task<List<AgendaBloqueDto>> Handle(SearchAvailabilityQuery request, CancellationToken cancellationToken)
         {
+            var utcNow = DateTime.UtcNow;
             var desdeUtc = DateTime.SpecifyKind(request.Desde.Date, DateTimeKind.Utc);
             var hastaFinDelDiaUtc = DateTime.SpecifyKind(request.Hasta.Date.AddDays(1), DateTimeKind.Utc);
             var availableScheduleBlocks = await (
@@ -24,11 +25,15 @@ namespace MedCareOS.Application.Appointments.Queries.SearchAvailability
                 from block in _dbContext.ScheduleBlocks
 
                 where !block.IsOverbook
+                    && block.StartTime > utcNow
                     && block.StartTime.Date >= desdeUtc
                     && block.EndTime.Date < hastaFinDelDiaUtc
 
                 join staff in _dbContext.Staffs on block.StaffId equals staff.Id
                 where staff.Specialty == request.Especialidad
+
+                join box in _dbContext.Boxes on block.BoxId equals box.Id
+                where box.IsActive
 
                 join appBlock in _dbContext.Appointments on block.Id equals appBlock.ScheduleBlockId into appBlockGroup
                 from activeApp in appBlockGroup.Where(x => x.Status != AppointmentStatus.Cancelled).DefaultIfEmpty()

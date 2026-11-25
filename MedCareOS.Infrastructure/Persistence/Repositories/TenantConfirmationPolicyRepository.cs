@@ -72,6 +72,21 @@ public class TenantConfirmationPolicyRepository : ITenantConfirmationPolicyRepos
                 policy.HighExitThreshold,
                 policy.HighEnterThreshold,
                 policy.UpdatedAt);
+
+            existing.ConfigureOverbookPolicy(
+                policy.AutoOverbookEnabled,
+                policy.AutoOverbookMinEffectiveScore,
+                policy.HitlOverbookMinEffectiveScore,
+                policy.ExcludedSeniorAgeYears,
+                policy.GetExcludedClinicalSpecialties(),
+                policy.GetExcludedClinicalKeywords(),
+                policy.WaitingListOfferTtlMinutes,
+                policy.MaxWaitingListCascadeOffers,
+                policy.MinLeadMinutesForWaitingListOffer,
+                policy.MaxReschedulesPerAppointment,
+                policy.MinShadowEvaluationsForActivation,
+                policy.MaxFalsePositiveRateForActivation,
+                policy.UpdatedAt);
         }
     }
 }
