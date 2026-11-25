@@ -1,4 +1,5 @@
-﻿using MediatR;
+﻿using System.Text.Json.Serialization;
+using MediatR;
 
 namespace MedCareOS.Application.Appointments.Commands.CreateAppointment;
 
@@ -7,5 +8,6 @@ public record CreateAppointmentCommand(
     Guid PatientId,
     string SymptomsRaw,
     string SchedulingSource,
-    Guid? AuthenticatedUserId = null
+    Guid? AuthenticatedUserId = null,
+    [property: JsonIgnore] bool AllowOverbookBlock = false
     ) : IRequest<Guid>;

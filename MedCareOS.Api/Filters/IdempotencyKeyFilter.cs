@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +11,8 @@ namespace MedCareOS.Api.Filters;
 public class IdempotencyKeyFilter : IAsyncActionFilter
 {
     private const string HeaderName = "Idempotency-Key";
+    private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
+
     private readonly IApplicationDbContext _dbContext;
 
     public IdempotencyKeyFilter(IApplicationDbContext dbContext)
@@ -32,14 +36,34 @@ public class IdempotencyKeyFilter : IAsyncActionFilter
         }
 
         var endpoint = context.HttpContext.Request.Path.Value ?? string.Empty;
-        var scopedKey = $"{endpoint}:{key}";
+        var scopedKey = BuildScopedKey(endpoint, key);
 
-        var alreadyProcessed = await _dbContext.ProcessedWebhookKeys
+        var existing = await _dbContext.ProcessedWebhookKeys
             .AsNoTracking()
-            .AnyAsync(k => k.Key == scopedKey, context.HttpContext.RequestAborted);
+            .FirstOrDefaultAsync(k => k.Key == scopedKey, context.HttpContext.RequestAborted);
 
-        if (alreadyProcessed)
+        if (existing is not null)
         {
+            if (existing.ResponseStatusCode.HasValue)
+            {
+                if (existing.ResponseStatusCode.Value == StatusCodes.Status204NoContent)
+                {
+                    context.Result = new NoContentResult();
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(existing.ResponseBodyJson))
+                {
+                    context.Result = new ContentResult
+                    {
+                        StatusCode = existing.ResponseStatusCode.Value,
+                        Content = existing.ResponseBodyJson,
+                        ContentType = "application/json"
+                    };
+                    return;
+                }
+            }
+
             context.Result = new OkObjectResult(new
             {
                 message = "Solicitud webhook ya procesada anteriormente (idempotente).",
@@ -52,9 +76,11 @@ public class IdempotencyKeyFilter : IAsyncActionFilter
 
         if (executedContext.Exception == null &&
             executedContext.Result is IActionResult result &&
-            IsSuccessResult(result))
+            TryExtractSuccessResponse(result, out var statusCode, out var responseBodyJson))
         {
-            _dbContext.ProcessedWebhookKeys.Add(ProcessedWebhookKey.Create(scopedKey, endpoint));
+            _dbContext.ProcessedWebhookKeys.Add(
+                ProcessedWebhookKey.Create(scopedKey, endpoint, statusCode, responseBodyJson));
+
             try
             {
                 await _dbContext.SaveChangesAsync(context.HttpContext.RequestAborted);
@@ -66,11 +92,63 @@ public class IdempotencyKeyFilter : IAsyncActionFilter
         }
     }
 
-    private static bool IsSuccessResult(IActionResult result) => result switch
+    private static string BuildScopedKey(string endpoint, string key)
     {
-        OkResult or OkObjectResult or NoContentResult or CreatedResult or CreatedAtActionResult => true,
-        ObjectResult obj => obj.StatusCode is null or (>= 200 and < 300),
-        StatusCodeResult status => status.StatusCode is >= 200 and < 300,
-        _ => false
-    };
+        var raw = $"{endpoint}:{key}";
+        return raw.Length <= 200 ? raw : raw[..200];
+    }
+
+    private static bool TryExtractSuccessResponse(
+        IActionResult result,
+        out int statusCode,
+        out string? bodyJson)
+    {
+        bodyJson = null;
+
+        switch (result)
+        {
+            case OkObjectResult okObj:
+                statusCode = okObj.StatusCode ?? StatusCodes.Status200OK;
+                bodyJson = okObj.Value is null ? null : JsonSerializer.Serialize(okObj.Value, SerializerOptions);
+                return true;
+
+            case CreatedResult created:
+                statusCode = created.StatusCode ?? StatusCodes.Status201Created;
+                bodyJson = created.Value is null ? null : JsonSerializer.Serialize(created.Value, SerializerOptions);
+                return true;
+
+            case CreatedAtActionResult createdAt:
+                statusCode = createdAt.StatusCode ?? StatusCodes.Status201Created;
+                bodyJson = createdAt.Value is null ? null : JsonSerializer.Serialize(createdAt.Value, SerializerOptions);
+                return true;
+
+            case ObjectResult obj when obj.StatusCode is null or (>= 200 and < 300):
+                statusCode = obj.StatusCode ?? StatusCodes.Status200OK;
+                bodyJson = obj.Value is null ? null : JsonSerializer.Serialize(obj.Value, SerializerOptions);
+                return true;
+
+            case OkResult:
+                statusCode = StatusCodes.Status200OK;
+                return true;
+
+            case NoContentResult:
+                statusCode = StatusCodes.Status204NoContent;
+                return true;
+
+            case StatusCodeResult status when status.StatusCode is >= 200 and < 300:
+                statusCode = status.StatusCode;
+                return true;
+
+            default:
+                statusCode = 0;
+                return false;
+        }
+    }
+
+    private static JsonSerializerOptions CreateSerializerOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
+    }
 }

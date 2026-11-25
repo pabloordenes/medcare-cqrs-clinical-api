@@ -503,6 +503,7 @@ public class DynamicRiskSignalsIntegrationTests
             services.AddScoped<IAppointmentRepository, AppointmentRepository>();
             services.AddScoped<IPatientRepository, PatientRepository>();
             services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+            services.AddScoped<IBoxRepository, BoxRepository>();
             services.AddScoped<IStaffRepository, StaffRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();

@@ -88,6 +88,25 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
                 Guid.NewGuid(), DateOnly.FromDateTime(targetDate), DateOnly.FromDateTime(targetDate),
                 new TimeOnly(10, 0), new TimeOnly(11, 0), [targetDate.DayOfWeek]);
             var appointment = Appointment.Create(block.Id, patient.Id, "Cefalea intensa", "paciente");
+            var now = DateTimeOffset.UtcNow;
+            appointment.MarkFinalConfirmationRequested(now.AddHours(-12));
+            appointment.MarkUnresponsive(now.AddMinutes(-5));
+
+            var finalNotif = Notification.Create(
+                appointment.TenantId,
+                appointment.Id,
+                patient.Id,
+                NotificationType.FinalConfirmation,
+                NotificationChannel.Email,
+                "appointment.final_confirmation",
+                1,
+                "es-CL",
+                "{}",
+                now.AddHours(-12),
+                Guid.NewGuid(),
+                now.AddHours(-12));
+            finalNotif.MarkSent("Resend", $"re_{Guid.NewGuid():N}", "Confirmación final", now.AddHours(-12));
+            finalNotif.ApplyDeliveryStatus(NotificationStatus.Delivered, now.AddHours(-11));
 
             db.Users.AddRange(staffUser, patientUser);
             db.Staffs.Add(staff);
@@ -95,6 +114,7 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
             db.Boxes.Add(box);
             db.ScheduleBlocks.Add(block);
             db.Appointments.Add(appointment);
+            db.Notifications.Add(finalNotif);
             await db.SaveChangesAsync();
 
             appointmentId = appointment.Id;
@@ -105,7 +125,13 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
         omroClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", _factory.GenerateOmroServiceToken());
 
-        var payload = new { ResourceId = appointmentId, TargetRisk = 0.91m, AutoApprove = true };
+        var payload = new
+        {
+            resourceId = appointmentId,
+            reason = "Deadline vencido con aprobación HITL",
+            correlationId = Guid.NewGuid(),
+            decisionMode = "Approved"
+        };
         var firstRes = await omroClient.PostAsJsonAsync("/api/appointments/overbook", payload);
         var secondRes = await omroClient.PostAsJsonAsync("/api/appointments/overbook", payload);
 

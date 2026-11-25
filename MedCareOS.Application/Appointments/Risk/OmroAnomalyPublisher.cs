@@ -3,6 +3,7 @@ using MassTransit;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
+using MedCareOS.Domain.Services;
 using Microsoft.Extensions.Logging;
 using Omro.Contracts.Events;
 
@@ -14,6 +15,8 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
     private readonly IScheduleBlockRepository _scheduleBlockRepository;
     private readonly IStaffRepository _staffRepository;
     private readonly IAppointmentRepository _appointmentRepository;
+    private readonly INotificationRepository _notificationRepository;
+    private readonly ITenantConfirmationPolicyRepository _policyRepository;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<OmroAnomalyPublisher> _logger;
 
@@ -22,6 +25,8 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
         IScheduleBlockRepository scheduleBlockRepository,
         IStaffRepository staffRepository,
         IAppointmentRepository appointmentRepository,
+        INotificationRepository notificationRepository,
+        ITenantConfirmationPolicyRepository policyRepository,
         IPublishEndpoint publishEndpoint,
         ILogger<OmroAnomalyPublisher> logger)
     {
@@ -29,6 +34,8 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
         _scheduleBlockRepository = scheduleBlockRepository;
         _staffRepository = staffRepository;
         _appointmentRepository = appointmentRepository;
+        _notificationRepository = notificationRepository;
+        _policyRepository = policyRepository;
         _publishEndpoint = publishEndpoint;
         _logger = logger;
     }
@@ -83,6 +90,18 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
             ?? appointment.CurrentBaseModelScore
             ?? RiskThresholds.ModerateRiskMin;
 
+        var policy = await _policyRepository.GetOrDefaultAsync(appointment.TenantId, cancellationToken);
+        var finalConfirmation = await _notificationRepository.GetLatestByAppointmentAndTypeAsync(
+            appointment.Id,
+            NotificationType.FinalConfirmation,
+            cancellationToken);
+        var finalNotificationDelivered = finalConfirmation is not null &&
+            finalConfirmation.Status is NotificationStatus.Delivered or NotificationStatus.Read;
+
+        var exclusion = patient is not null && staff is not null
+            ? ClinicalExclusionEvaluator.Evaluate(patient, staff, appointment, policy, context.OccurredAtUtc)
+            : new ClinicalExclusionResult(false, ClinicalExclusionEvaluator.NoneCode, null);
+
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["edad"] = age.ToString(CultureInfo.InvariantCulture),
@@ -96,7 +115,11 @@ public class OmroAnomalyPublisher : IOmroAnomalyPublisher
             ["effective_score"] = riskProbability.ToString("F4", CultureInfo.InvariantCulture),
             ["scoring_status"] = appointment.ScoringStatus.ToString(),
             ["previous_absences"] = previousAbsences.ToString(CultureInfo.InvariantCulture),
-            ["trigger_source"] = string.IsNullOrWhiteSpace(context.TriggerSource) ? "system" : context.TriggerSource.Trim()
+            ["trigger_source"] = string.IsNullOrWhiteSpace(context.TriggerSource) ? "system" : context.TriggerSource.Trim(),
+            ["final_notification_delivered"] = finalNotificationDelivered ? "true" : "false",
+            ["clinical_exclusion"] = exclusion.IsExcluded ? "true" : "false",
+            ["clinical_exclusion_code"] = exclusion.Code,
+            ["auto_overbook_enabled"] = policy.AutoOverbookEnabled ? "true" : "false"
         };
 
         await _publishEndpoint.Publish(
