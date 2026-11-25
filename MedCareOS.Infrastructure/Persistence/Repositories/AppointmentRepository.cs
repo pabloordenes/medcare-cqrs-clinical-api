@@ -25,6 +25,31 @@ public class AppointmentRepository : IAppointmentRepository
         return await _dbContext.Appointments.FirstOrDefaultAsync(x => x.Id == appointmentId, cancellationToken);
     }
 
+    public async Task<Appointment?> GetActiveByScheduleBlockIdAsync(Guid scheduleBlockId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Appointments
+            .FirstOrDefaultAsync(
+                a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled,
+                cancellationToken);
+    }
+
+    public async Task<List<Appointment>> GetByPatientIdAsync(
+        Guid patientId,
+        bool includePast,
+        CancellationToken cancellationToken = default)
+    {
+        var utcNow = DateTime.UtcNow;
+        var query =
+            from app in _dbContext.Appointments.AsNoTracking()
+            join block in _dbContext.ScheduleBlocks.AsNoTracking() on app.ScheduleBlockId equals block.Id
+            where app.PatientId == patientId
+                  && (includePast || block.EndTime >= utcNow)
+            orderby block.StartTime
+            select app;
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
     public async Task<int> GetNoShowCountByPatientId(Guid patientId, CancellationToken cancellationToken)
     {
         return await _dbContext.Appointments.CountAsync(a => a.PatientId == patientId && a.Status == AppointmentStatus.NoShow, cancellationToken);
@@ -36,6 +61,24 @@ public class AppointmentRepository : IAppointmentRepository
             .AnyAsync(a => a.ScheduleBlockId == scheduleBlockId && a.Status != AppointmentStatus.Cancelled, cancellationToken);
     }
 
+    public async Task<bool> HasOverlappingActiveAppointmentAsync(
+        Guid patientId,
+        DateTime startTimeUtc,
+        DateTime endTimeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await (
+            from app in _dbContext.Appointments.AsNoTracking()
+            join block in _dbContext.ScheduleBlocks.AsNoTracking() on app.ScheduleBlockId equals block.Id
+            where app.PatientId == patientId
+                  && app.Status != AppointmentStatus.Cancelled
+                  && app.Status != AppointmentStatus.NoShow
+                  && block.StartTime < endTimeUtc
+                  && block.EndTime > startTimeUtc
+            select app.Id
+        ).AnyAsync(cancellationToken);
+    }
+
     public async Task<List<Appointment>> GetPastUnattendedAppointmentsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
     {
         return await (
@@ -45,5 +88,34 @@ public class AppointmentRepository : IAppointmentRepository
                   && block.EndTime < utcNow
             select app
         ).ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Appointment>> GetAppointmentsPendingScoringRetryAsync(
+        DateTimeOffset utcNow,
+        TimeSpan pendingStaleAge,
+        int maxAttempts,
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        var staleCutoff = utcNow.Subtract(pendingStaleAge);
+        var utcNowDateTime = utcNow.UtcDateTime;
+
+        return await (
+            from app in _dbContext.Appointments
+            join block in _dbContext.ScheduleBlocks on app.ScheduleBlockId equals block.Id
+            where (app.Status == AppointmentStatus.Scheduled || app.Status == AppointmentStatus.Confirmed)
+                  && block.StartTime > utcNowDateTime
+                  && (
+                      ((app.ScoringStatus == ScoringStatus.Pending || app.NlpStatus == NlpStatus.Pending)
+                          && app.CreatedAt <= staleCutoff
+                          && (app.NextScoringRetryAt == null || app.NextScoringRetryAt <= utcNow))
+                      ||
+                      ((app.ScoringStatus == ScoringStatus.Failed || app.NlpStatus == NlpStatus.Failed)
+                          && app.ScoringAttempts < maxAttempts
+                          && (app.NextScoringRetryAt == null || app.NextScoringRetryAt <= utcNow))
+                  )
+            orderby app.NextScoringRetryAt ?? app.CreatedAt
+            select app
+        ).Take(batchSize).ToListAsync(cancellationToken);
     }
 }

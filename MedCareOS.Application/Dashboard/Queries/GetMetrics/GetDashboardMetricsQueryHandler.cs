@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Application.Overbooking.Queries.GetOverbookMetrics;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,10 +12,14 @@ namespace MedCareOS.Application.Dashboard.Queries.GetMetrics;
 public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetricsQuery, DashboardAusentismoDto>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly IOverbookShadowDecisionRepository? _shadowDecisionRepository;
 
-    public GetDashboardMetricsQueryHandler(IApplicationDbContext dbContext)
+    public GetDashboardMetricsQueryHandler(
+        IApplicationDbContext dbContext,
+        IOverbookShadowDecisionRepository? shadowDecisionRepository = null)
     {
         _dbContext = dbContext;
+        _shadowDecisionRepository = shadowDecisionRepository;
     }
 
     public async Task<DashboardAusentismoDto> Handle(GetDashboardMetricsQuery request, CancellationToken cancellationToken)
@@ -28,15 +34,19 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
                 app.Id,
                 app.Status,
                 app.ActualAttendance,
-                app.NoShowRiskScore,
-                app.RiskBand,
+                app.ScoringStatus,
+                app.NlpStatus,
+                NoShowRiskScore = app.EffectiveRiskScore ?? app.ModelRiskScore ?? app.NoShowRiskScore,
+                RiskBand = app.EffectiveBand.HasValue ? app.EffectiveBand.Value.ToLabel() : app.RiskBand,
                 app.CreatedAt,
                 block.StartTime,
                 Specialty = staff.Specialty ?? "Medicina General",
                 DoctorName = staff.FirstName + " " + staff.LastName,
                 PatientName = patient.FirstName + " " + patient.LastName,
                 PatientRut = patient.Rut,
-                FactorPrincipal = app.NlpSummary ?? "Evaluación clínica"
+                FactorPrincipal = app.NlpStatus == NlpStatus.Completed && !string.IsNullOrWhiteSpace(app.NlpSummary)
+                    ? app.NlpSummary
+                    : "Evaluación clínica pendiente"
             }
         ).ToListAsync(cancellationToken);
 
@@ -116,10 +126,12 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
 
         // E. Alertas de Riesgo (La tabla de acción predictiva)
         var alertasRiesgo = citasRaw
-            .Where(c => (c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed) 
-                     && c.StartTime > DateTime.UtcNow 
-                     && (c.RiskBand == RiskThresholds.HighRiskBand || c.NoShowRiskScore >= RiskThresholds.ModerateRiskMin))
-            .OrderByDescending(c => c.NoShowRiskScore)
+            .Where(c => (c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed)
+                     && c.StartTime > DateTime.UtcNow
+                     && c.ScoringStatus == ScoringStatus.Scored
+                     && c.NoShowRiskScore.HasValue
+                     && (c.RiskBand == RiskThresholds.HighRiskBand || c.NoShowRiskScore.Value >= RiskThresholds.ModerateRiskMin))
+            .OrderByDescending(c => c.NoShowRiskScore!.Value)
             .Take(10) // Top 10 pacientes con más riesgo
             .Select(c => new CitaRiesgoDto(
                 c.Id,
@@ -129,12 +141,19 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
                 c.DoctorName,
                 c.StartTime.ToString("yyyy-MM-dd"),
                 c.StartTime.ToString("HH:mm"),
-                Math.Round(c.NoShowRiskScore * 100, 1),
+                Math.Round(c.NoShowRiskScore!.Value * 100, 1),
                 c.RiskBand ?? "ALTO",
                 c.FactorPrincipal,
                 "Pendiente"
             ))
             .ToList();
+
+        OverbookMetricsDto? overbookMetrics = null;
+        if (_shadowDecisionRepository is not null)
+        {
+            var metricsHandler = new GetOverbookMetricsQueryHandler(_dbContext, _shadowDecisionRepository);
+            overbookMetrics = await metricsHandler.Handle(new GetOverbookMetricsQuery(RiskThresholds.DefaultTenantId), cancellationToken);
+        }
 
         return new DashboardAusentismoDto(
             Kpis: kpis,
@@ -143,7 +162,8 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
             Distribucion: distribucion,
             PorHorario: porHorario,
             Omro: new EfectividadOmroDto(94.2m, 71.5m, 320, 285), // Hardcode por ahora hasta tener modulo de mensajeria
-            AlertasRiesgo: alertasRiesgo
+            AlertasRiesgo: alertasRiesgo,
+            OverbookMetrics: overbookMetrics
         );
     }
 }

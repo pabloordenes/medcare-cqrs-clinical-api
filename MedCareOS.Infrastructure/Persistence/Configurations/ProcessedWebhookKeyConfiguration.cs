@@ -21,6 +21,13 @@ public class ProcessedWebhookKeyConfiguration : IEntityTypeConfiguration<Process
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(x => x.ResponseStatusCode)
+            .HasColumnName("response_status_code");
+
+        builder.Property(x => x.ResponseBodyJson)
+            .HasColumnName("response_body_json")
+            .HasColumnType("text");
+
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .IsRequired();

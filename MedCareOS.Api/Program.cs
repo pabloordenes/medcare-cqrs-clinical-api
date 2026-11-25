@@ -1,22 +1,45 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using MassTransit;
 using MedCareOS.Api.BackgroundServices;
 using MedCareOS.Api.Security;
+using MedCareOS.Application.Appointments.Consumers;
+using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Appointments.Overbooking;
+using MedCareOS.Application.Appointments.Risk;
+using MedCareOS.Application.Appointments.Workers;
 using MedCareOS.Application.Common.Interfaces;
+using MedCareOS.Application.Common.Interfaces.Notifications;
+using MedCareOS.Application.Common.Options;
+using MedCareOS.Application.Common.Persistence;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Application.Notifications.Consumers;
+using MedCareOS.Application.Notifications.Services;
+using MedCareOS.Application.Notifications.Templates;
+using MedCareOS.Application.Resolutions.Services;
+using MedCareOS.Application.WaitingLists.Services;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
 using MedCareOS.Infrastructure.Configuration;
+using MedCareOS.Infrastructure.Messaging.Admin;
+using MedCareOS.Infrastructure.Messaging.Configuration;
+using MedCareOS.Infrastructure.Messaging.Consumers;
+using MedCareOS.Infrastructure.Messaging.Observers;
+using MedCareOS.Infrastructure.Notifications.Channels;
+using MedCareOS.Infrastructure.Notifications.Security;
+using MedCareOS.Infrastructure.Notifications.Webhooks;
 using MedCareOS.Infrastructure.Persistence;
 using MedCareOS.Infrastructure.Persistence.Repositories;
 using MedCareOS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,25 +47,98 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMediatR(cfg => 
     cfg.RegisterServicesFromAssembly(typeof(MedCareOS.Application.AssemblyReference).Assembly));
 
-// configuracion de MassTransit con RabbitMQ
+builder.Services.Configure<ScoringOptions>(
+    builder.Configuration.GetSection(ScoringOptions.SectionName));
+builder.Services.Configure<ScoringRetryOptions>(
+    builder.Configuration.GetSection(ScoringRetryOptions.SectionName));
+builder.Services.Configure<ScheduledActionsOptions>(
+    builder.Configuration.GetSection(ScheduledActionsOptions.SectionName));
+builder.Services.Configure<RabbitMqMessagingOptions>(
+    builder.Configuration.GetSection(RabbitMqMessagingOptions.SectionName));
+builder.Services.Configure<NotificationOptions>(
+    builder.Configuration.GetSection(NotificationOptions.SectionName));
+builder.Services.Configure<ResendOptions>(
+    builder.Configuration.GetSection(ResendOptions.SectionName));
+builder.Services.Configure<MetaWhatsAppOptions>(
+    builder.Configuration.GetSection(MetaWhatsAppOptions.SectionName));
+
+var notificationOptions = builder.Configuration
+    .GetSection(NotificationOptions.SectionName)
+    .Get<NotificationOptions>() ?? new NotificationOptions();
+
+var rabbitOptions = builder.Configuration
+    .GetSection(RabbitMqMessagingOptions.SectionName)
+    .Get<RabbitMqMessagingOptions>() ?? new RabbitMqMessagingOptions();
+
+builder.Services.AddSingleton<IOperationalAlertSink, LoggingOperationalAlertSink>();
+builder.Services.AddSingleton<DeadLetterAlertObserver>();
+builder.Services.AddScoped<IMessageInboxStore, EfMessageInboxStore>();
+builder.Services.AddScoped<IRabbitMqQueueAdminService, RabbitMqQueueAdminService>();
+
+if (string.Equals(rabbitOptions.RedeliveryMode, "QuartzInMemory", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddQuartz();
+    builder.Services.AddQuartzHostedService(options =>
+    {
+        options.WaitForJobsToComplete = true;
+    });
+}
+
+// configuracion de MassTransit con RabbitMQ + EF Core Bus Outbox
 builder.Services.AddMassTransit(x =>
 {
-    // cloud amqp: masstransit 
+    x.SetKebabCaseEndpointNameFormatter();
+    x.AddConsumer<ScoreAppointmentConsumer, ScoreAppointmentConsumerDefinition>();
+    x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
+    x.AddConsumer<LateConfirmationReceivedConsumer, LateConfirmationReceivedConsumerDefinition>();
+    x.AddConsumer<MedCareOS.Application.WaitingLists.Consumers.OverbookOpenedConsumer, OverbookOpenedConsumerDefinition>();
+    x.AddConsumer<MedCareOS.Application.WaitingLists.Consumers.SlotReleasedConsumer, SlotReleasedConsumerDefinition>();
+
+    x.AddEntityFrameworkOutbox<ApplicationDbContext>(o =>
+    {
+        o.UsePostgres();
+        o.UseBusOutbox();
+        o.QueryDelay = TimeSpan.FromSeconds(5);
+        o.DuplicateDetectionWindow = TimeSpan.FromMinutes(30);
+    });
+
+    if (string.Equals(rabbitOptions.RedeliveryMode, "QuartzInMemory", StringComparison.OrdinalIgnoreCase))
+    {
+        x.AddPublishMessageScheduler();
+        x.AddQuartzConsumers();
+    }
+    else if (string.Equals(rabbitOptions.RedeliveryMode, "RabbitMqDelayedExchange", StringComparison.OrdinalIgnoreCase))
+    {
+        x.AddDelayedMessageScheduler();
+    }
+
     x.UsingRabbitMq((context, cfg) =>
     {
-        var rmqHost = builder.Configuration["RabbitMq:Host"] ?? "localhost";
-        var rmqUser = builder.Configuration["RabbitMq:Username"] ?? "guest";
-        var rmqPass = builder.Configuration["RabbitMq:Password"] ?? "guest";
-        var rmqVHost = builder.Configuration["RabbitMq:VirtualHost"];
+        var rmqHost = string.IsNullOrWhiteSpace(rabbitOptions.Host) ? "localhost" : rabbitOptions.Host;
+        var rmqUser = string.IsNullOrWhiteSpace(rabbitOptions.Username) ? "guest" : rabbitOptions.Username;
+        var rmqPass = string.IsNullOrWhiteSpace(rabbitOptions.Password) ? "guest" : rabbitOptions.Password;
+        var rmqVHost = rabbitOptions.VirtualHost;
         if (string.IsNullOrWhiteSpace(rmqVHost))
         {
             rmqVHost = rmqHost is "localhost" or "127.0.0.1" or "rabbitmq" ? "/" : rmqUser;
         }
 
-        cfg.Host(rmqHost, rmqVHost, h => {
+        cfg.Host(rmqHost, rmqVHost, h =>
+        {
             h.Username(rmqUser);
             h.Password(rmqPass);
         });
+
+        if (string.Equals(rabbitOptions.RedeliveryMode, "QuartzInMemory", StringComparison.OrdinalIgnoreCase))
+        {
+            cfg.UsePublishMessageScheduler();
+        }
+        else if (string.Equals(rabbitOptions.RedeliveryMode, "RabbitMqDelayedExchange", StringComparison.OrdinalIgnoreCase))
+        {
+            cfg.UseDelayedMessageScheduler();
+        }
+
+        cfg.ConnectReceiveObserver(context.GetRequiredService<DeadLetterAlertObserver>());
         cfg.ConfigureEndpoints(context);
     });
 });
@@ -162,20 +258,112 @@ builder.Services.AddDbContext<MedCareOS.Infrastructure.Persistence.ApplicationDb
 // repositorios & unit of work
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<IAppointmentScheduledActionRepository, AppointmentScheduledActionRepository>();
+builder.Services.AddScoped<IRiskSignalRepository, RiskSignalRepository>();
+builder.Services.AddScoped<ITenantConfirmationPolicyRepository, TenantConfirmationPolicyRepository>();
+builder.Services.AddScoped<IAppointmentLifecyclePlanner, AppointmentLifecyclePlanner>();
+builder.Services.AddScoped<IRiskSignalProcessor, RiskSignalProcessor>();
+builder.Services.AddScoped<IOmroAnomalyPublisher, OmroAnomalyPublisher>();
+builder.Services.AddScoped<IAppointmentRescoreService, AppointmentRescoreService>();
+builder.Services.AddSingleton<IScheduledActionsProcessor, ScheduledActionsProcessor>();
+builder.Services.AddScoped<ITransactionalExecutor, EfTransactionalExecutor>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
+builder.Services.AddScoped<IWaitingListRepository, WaitingListRepository>();
+builder.Services.AddScoped<IWaitingListOfferRepository, WaitingListOfferRepository>();
+builder.Services.AddScoped<MedCareOS.Application.WaitingLists.Ranking.IWaitingListRanker, MedCareOS.Application.WaitingLists.Ranking.DeterministicWaitingListRanker>();
+builder.Services.AddScoped<IWaitingListBackfillService, MedCareOS.Application.WaitingLists.Services.WaitingListBackfillService>();
+builder.Services.AddScoped<IOverbookCollisionEventRepository, OverbookCollisionEventRepository>();
+builder.Services.AddScoped<IOverbookShadowDecisionRepository, OverbookShadowDecisionRepository>();
+builder.Services.AddScoped<IOverbookPolicyAuditLogRepository, OverbookPolicyAuditLogRepository>();
+builder.Services.AddScoped<IAppointmentRescheduleHistoryRepository, AppointmentRescheduleHistoryRepository>();
+builder.Services.AddScoped<MedCareOS.Application.Appointments.Services.ISlotReleaseService, MedCareOS.Application.Appointments.Services.SlotReleaseService>();
+builder.Services.AddScoped<IWaitingListOfferCancellationService, MedCareOS.Application.WaitingLists.Services.WaitingListOfferCancellationService>();
+builder.Services.AddSingleton<MedCareOS.Application.WaitingLists.Workers.IWaitingListOfferExpirationProcessor, MedCareOS.Application.WaitingLists.Workers.WaitingListOfferExpirationProcessor>();
+builder.Services.AddScoped<IOverbookCollisionResolutionService, OverbookCollisionResolutionService>();
 builder.Services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
+builder.Services.AddScoped<IAiResolutionSupersedingService, AiResolutionSupersedingService>();
+builder.Services.AddScoped<IReceptionTaskRepository, ReceptionTaskRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<IPatientActionTokenRepository, PatientActionTokenRepository>();
 builder.Services.AddScoped<IApplicationDbContext>(sp => 
     sp.GetRequiredService<ApplicationDbContext>());
+
+builder.Services.AddSingleton<IFakeNotificationStore, InMemoryFakeNotificationStore>();
+builder.Services.AddScoped<INotificationChannel, FakeEmailNotificationChannel>();
+builder.Services.AddScoped<INotificationChannel, FakeWhatsAppNotificationChannel>();
+builder.Services.AddHttpClient<ResendEmailNotificationChannel>((serviceProvider, client) =>
+{
+    var resendOptions = serviceProvider.GetRequiredService<IOptions<ResendOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(resendOptions.BaseUrl) ? "https://api.resend.com/" : resendOptions.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+});
+builder.Services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<ResendEmailNotificationChannel>());
+builder.Services.AddHttpClient<MetaWhatsAppNotificationChannel>((serviceProvider, client) =>
+{
+    var waOptions = serviceProvider.GetRequiredService<IOptions<MetaWhatsAppOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(waOptions.BaseUrl) ? "https://graph.facebook.com/" : waOptions.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+});
+builder.Services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<MetaWhatsAppNotificationChannel>());
+builder.Services.AddScoped<INotificationChannelResolver, NotificationChannelResolver>();
+builder.Services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
+builder.Services.AddScoped<INotificationOutboxService, NotificationOutboxService>();
+builder.Services.AddScoped<IPatientActionTokenService, PatientActionTokenService>();
+builder.Services.AddScoped<IWebhookSignatureVerifier, MetaWebhookSignatureVerifier>();
+builder.Services.AddScoped<IWebhookSignatureVerifier, ResendWebhookSignatureVerifier>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("ProviderWebhooks", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var limit = Math.Max(1, notificationOptions.RateLimiting.ProviderWebhooksPermitLimit);
+        var windowSeconds = Math.Max(1, notificationOptions.RateLimiting.ProviderWebhooksWindowSeconds);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"webhooks:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy("PublicPatientActions", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var limit = Math.Max(1, notificationOptions.RateLimiting.PublicActionsPermitLimit);
+        var windowSeconds = Math.Max(1, notificationOptions.RateLimiting.PublicActionsWindowSeconds);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"public_actions:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
 
 builder.Services.Configure<AiServiceOptions>(
     builder.Configuration.GetSection(AiServiceOptions.SectionName));
 
 builder.Services.AddSingleton<IAiTokenService, AiTokenService>();
 builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
+builder.Services.AddHostedService<ScoringRetryBackgroundService>();
+builder.Services.AddHostedService<NotificationRetentionBackgroundService>();
+builder.Services.AddHostedService<ScheduledActionsWorker>();
+builder.Services.AddHostedService<WaitingListOfferExpirationWorker>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {
@@ -205,6 +393,8 @@ app.UseHttpsRedirection();
 
 
 // IMPORTANTE: El orden de estos middlewares es crítico
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

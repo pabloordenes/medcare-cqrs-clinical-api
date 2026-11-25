@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Omro.Contracts.Events;
+using Omro.Contracts.Plans;
 
 namespace MedCareOS.IntegrationTests.Resolutions;
 
@@ -88,6 +89,25 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
                 Guid.NewGuid(), DateOnly.FromDateTime(targetDate), DateOnly.FromDateTime(targetDate),
                 new TimeOnly(10, 0), new TimeOnly(11, 0), [targetDate.DayOfWeek]);
             var appointment = Appointment.Create(block.Id, patient.Id, "Cefalea intensa", "paciente");
+            var now = DateTimeOffset.UtcNow;
+            appointment.MarkFinalConfirmationRequested(now.AddHours(-12));
+            appointment.MarkUnresponsive(now.AddMinutes(-5));
+
+            var finalNotif = Notification.Create(
+                appointment.TenantId,
+                appointment.Id,
+                patient.Id,
+                NotificationType.FinalConfirmation,
+                NotificationChannel.Email,
+                "appointment.final_confirmation",
+                1,
+                "es-CL",
+                "{}",
+                now.AddHours(-12),
+                Guid.NewGuid(),
+                now.AddHours(-12));
+            finalNotif.MarkSent("Resend", $"re_{Guid.NewGuid():N}", "Confirmación final", now.AddHours(-12));
+            finalNotif.ApplyDeliveryStatus(NotificationStatus.Delivered, now.AddHours(-11));
 
             db.Users.AddRange(staffUser, patientUser);
             db.Staffs.Add(staff);
@@ -95,6 +115,7 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
             db.Boxes.Add(box);
             db.ScheduleBlocks.Add(block);
             db.Appointments.Add(appointment);
+            db.Notifications.Add(finalNotif);
             await db.SaveChangesAsync();
 
             appointmentId = appointment.Id;
@@ -105,7 +126,13 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
         omroClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", _factory.GenerateOmroServiceToken());
 
-        var payload = new { ResourceId = appointmentId, TargetRisk = 0.91m, AutoApprove = true };
+        var payload = new
+        {
+            resourceId = appointmentId,
+            reason = "Deadline vencido con aprobación HITL",
+            correlationId = Guid.NewGuid(),
+            decisionMode = "Approved"
+        };
         var firstRes = await omroClient.PostAsJsonAsync("/api/appointments/overbook", payload);
         var secondRes = await omroClient.PostAsJsonAsync("/api/appointments/overbook", payload);
 
@@ -262,5 +289,113 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
             future.Status.Should().Be(AppointmentStatus.Scheduled);
             future.ActualAttendance.Should().BeNull();
         }
+    }
+
+    [Fact]
+    public async Task ProposeAndApprove_WithV2StructuredAiPlan_ShouldPersistJsonAndPublishV2ResolutionApproved()
+    {
+        var resourceId = Guid.NewGuid();
+        var omroTaskId = Guid.NewGuid();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(3);
+
+        using var omroClient = _factory.CreateClient();
+        omroClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", _factory.GenerateOmroServiceToken());
+        omroClient.DefaultRequestHeaders.Add("Idempotency-Key", $"v2-prop-{Guid.NewGuid():N}");
+
+        var proposeBody = new
+        {
+            schemaVersion = "2.0",
+            resourceId,
+            riskProbability = 0.76m,
+            proposalExpiresAt = expiresAt,
+            aiPlan = new
+            {
+                schemaVersion = "2.0",
+                title = "Sobrecupo controlado HITL",
+                reasoning = "Riesgo moderado confirmado por política.",
+                confidenceScore = 0.88m,
+                omroTaskId,
+                matchedRuleId = "deadline-moderate-or-excluded-hitl",
+                policyVersion = 1,
+                proposalExpiresAt = expiresAt,
+                isShadowModeFallback = true,
+                deferredActions = new[]
+                {
+                    new
+                    {
+                        actionType = "GENERATE_OVERBOOK",
+                        endpoint = "https://medcare.test/api/appointments/overbook",
+                        httpMethod = "POST",
+                        payload = new
+                        {
+                            resourceId = resourceId.ToString(),
+                            decisionMode = "Approved",
+                            targetRisk = 0.76m
+                        }
+                    }
+                }
+            }
+        };
+
+        var proposeResponse = await omroClient.PostAsJsonAsync("/api/resolutions/propose", proposeBody);
+        proposeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var proposeJson = await JsonDocument.ParseAsync(await proposeResponse.Content.ReadAsStreamAsync());
+        var taskId = proposeJson.RootElement.GetProperty("taskId").GetGuid();
+
+        using var adminClient = _factory.CreateClient();
+        adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Test");
+        adminClient.DefaultRequestHeaders.Add("X-Test-Role", "Administrador");
+        adminClient.DefaultRequestHeaders.Add("X-Test-UserId", Guid.NewGuid().ToString());
+
+        var approveResponse = await adminClient.PatchAsync($"/api/resolutions/{taskId}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var harness = _factory.Services.GetRequiredService<ITestHarness>();
+        var published = await harness.Published.SelectAsync<ResolutionApproved>(
+            e => e.Context.Message.ResolutionTaskId == taskId).ToListAsync();
+
+        published.Should().ContainSingle();
+        var msg = published[0].Context.Message;
+        msg.SchemaVersion.Should().Be(PlanContractVersions.V2Structured);
+        msg.AiPlan.Should().NotBeNull();
+        msg.AiPlan!.OmroTaskId.Should().Be(omroTaskId);
+        msg.AiPlan.IsShadowModeFallback.Should().BeTrue();
+        msg.AiPlan.DeferredActions.Should().ContainSingle(a =>
+            a.ActionType == "GENERATE_OVERBOOK" &&
+            a.HttpMethod == "POST");
+    }
+
+    [Fact]
+    public async Task ProposeResolution_WithLegacyV1AiPlanJsonAndInvalidRequests_ShouldPreserveCompatibilityAndRejectUnsupportedVersions()
+    {
+        using var omroClient = _factory.CreateClient();
+        omroClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", _factory.GenerateOmroServiceToken());
+
+        var v1Response = await omroClient.PostAsJsonAsync("/api/resolutions/propose", new
+        {
+            resourceId = Guid.NewGuid(),
+            riskProbability = 0.71m,
+            aiPlanJson = "{\"DeferredActions\":[]}"
+        });
+        v1Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var unsupportedVersion = await omroClient.PostAsJsonAsync("/api/resolutions/propose", new
+        {
+            schemaVersion = "9.0",
+            resourceId = Guid.NewGuid(),
+            riskProbability = 0.71m,
+            aiPlanJson = "{\"DeferredActions\":[]}"
+        });
+        unsupportedVersion.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var missingPlan = await omroClient.PostAsJsonAsync("/api/resolutions/propose", new
+        {
+            resourceId = Guid.NewGuid(),
+            riskProbability = 0.71m
+        });
+        missingPlan.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

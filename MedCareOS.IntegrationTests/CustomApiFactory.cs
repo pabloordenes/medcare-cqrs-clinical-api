@@ -21,6 +21,10 @@ public class CustomApiFactory : WebApplicationFactory<Program>
     private readonly string _dbName = $"MedCareTestDb_{Guid.NewGuid()}";
 
     public string OmroPublicKeyPem => _omroTestRsa.ExportSubjectPublicKeyInfoPem();
+    public string TestActionTokenSecret { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    public string TestMetaAppSecret { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+    public string TestMetaVerifyToken { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+    public string TestResendWebhookSecret { get; } = "whsec_" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     public string GenerateOmroServiceToken(string role = "omro_service")
     {
@@ -59,6 +63,14 @@ public class CustomApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("AiService:Audience", "authenticated");
         builder.UseSetting("AiService:Role", "service-ia");
         builder.UseSetting("AiService:PrivateKeyContent", _omroTestRsa.ExportRSAPrivateKeyPem());
+        builder.UseSetting("RabbitMq:RedeliveryMode", "None");
+        builder.UseSetting("Scoring:PublishAnomalyOnCreate", "false");
+        builder.UseSetting("Notifications:ActionTokenSecret", TestActionTokenSecret);
+        builder.UseSetting("Notifications:EmailProvider", "Fake");
+        builder.UseSetting("Notifications:WhatsAppProvider", "Fake");
+        builder.UseSetting("Notifications:WhatsApp:AppSecret", TestMetaAppSecret);
+        builder.UseSetting("Notifications:WhatsApp:WebhookVerifyToken", TestMetaVerifyToken);
+        builder.UseSetting("Notifications:Resend:WebhookSecret", TestResendWebhookSecret);
 
         builder.ConfigureServices(services =>
         {
@@ -89,7 +101,12 @@ public class CustomApiFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             }
 
-            services.AddMassTransitTestHarness();
+            services.AddMassTransitTestHarness(x =>
+            {
+                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(15), testInactivityTimeout: TimeSpan.FromSeconds(2));
+                x.SetKebabCaseEndpointNameFormatter();
+                ConfigureTestMassTransit(x);
+            });
 
             services.Configure<AuthenticationOptions>(options =>
             {
@@ -101,6 +118,10 @@ public class CustomApiFactory : WebApplicationFactory<Program>
             services.AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
         });
+    }
+
+    protected virtual void ConfigureTestMassTransit(IBusRegistrationConfigurator configurator)
+    {
     }
 
     protected override void Dispose(bool disposing)

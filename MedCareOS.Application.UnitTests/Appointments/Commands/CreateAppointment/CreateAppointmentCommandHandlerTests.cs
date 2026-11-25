@@ -1,11 +1,15 @@
 using FluentAssertions;
 using MassTransit;
 using MedCareOS.Application.Appointments.Commands.CreateAppointment;
-using MedCareOS.Application.Common.Interfaces;
+using MedCareOS.Application.Appointments.Events;
+using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Common.Interfaces.Notifications;
+using MedCareOS.Application.Common.Options;
 using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Exceptions;
 using MedCareOS.Domain.Repositories;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace MedCareOS.Application.UnitTests;
@@ -13,7 +17,7 @@ namespace MedCareOS.Application.UnitTests;
 public class CreateAppointmentCommandHandlerTests
 {
     [Fact]
-    public async Task Handle_WhenPatientExists_CreatesAppointmentAndReturnsItsId_FastAndFireAndForget()
+    public async Task Handle_WhenValid_PersistsAppointmentAndPublishesOutboxEventAndNotificationInSameTransaction()
     {
         // Arrange
         var cancellationToken = CancellationToken.None;
@@ -21,20 +25,28 @@ public class CreateAppointmentCommandHandlerTests
         var scheduleBlockId = Guid.NewGuid();
         var staffId = Guid.NewGuid();
         var patient = Patient.Create(
-            Guid.NewGuid(), "12.345.678-9", "Ana", "Perez", new DateOnly(1990, 1, 1), "F", "+56912345678");
+            Guid.NewGuid(), "12.345.678-9", "Ana", "Perez", new DateOnly(1990, 1, 1), "F", "+56912345678", email: "ana@test.cl");
         var scheduleBlock = ScheduleBlock.Create(
-            staffId, Guid.NewGuid(), DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(1).AddMinutes(30), 
-            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)), 
+            staffId, Guid.NewGuid(), DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(1).AddMinutes(30),
+            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
             new TimeOnly(9, 0), new TimeOnly(9, 30), [DateTime.UtcNow.DayOfWeek]);
         var staff = Staff.Create(
             Guid.NewGuid(), "Carlos", "Medico", "9.876.543-2", "Medicina General", "Doctor", "+56987654321");
-        
-        var command = new CreateAppointmentCommand(scheduleBlockId, patientId, "Dolor de cabeza", "paciente");
-        Appointment? addedAppointment = null;
+        var box = Box.Create("Box 1", "Consulta", 1, "1");
 
-        var appointmentRepository = new Mock<IAppointmentRepository>();
+        var command = new CreateAppointmentCommand(scheduleBlockId, patientId, "Dolor de cabeza intenso", "paciente");
+        Appointment? addedAppointment = null;
+        AppointmentCreated? publishedEvent = null;
+        EnqueueNotificationRequest? enqueuedNotification = null;
+
+        var sequence = new MockSequence();
+        var appointmentRepository = new Mock<IAppointmentRepository>(MockBehavior.Loose);
         appointmentRepository
-            .Setup(repository => repository.AddAppointmentAsync(It.IsAny<Appointment>(), cancellationToken))
+            .Setup(r => r.HasActiveAppointmentForBlockAsync(scheduleBlockId, cancellationToken))
+            .ReturnsAsync(false);
+        appointmentRepository
+            .InSequence(sequence)
+            .Setup(r => r.AddAppointmentAsync(It.IsAny<Appointment>(), cancellationToken))
             .Callback<Appointment, CancellationToken>((appointment, _) => addedAppointment = appointment)
             .Returns(Task.CompletedTask);
 
@@ -47,26 +59,39 @@ public class CreateAppointmentCommandHandlerTests
         var staffRepository = new Mock<IStaffRepository>();
         staffRepository.Setup(r => r.GetByIdAsync(staffId, cancellationToken)).ReturnsAsync(staff);
 
+        var boxRepository = new Mock<IBoxRepository>();
+        boxRepository.Setup(r => r.GetByIdAsync(scheduleBlock.BoxId, cancellationToken)).ReturnsAsync(box);
+
+        var publishEndpoint = new Mock<IPublishEndpoint>();
+        publishEndpoint
+            .InSequence(sequence)
+            .Setup(p => p.Publish(It.IsAny<AppointmentCreated>(), cancellationToken))
+            .Callback<AppointmentCreated, CancellationToken>((evt, _) => publishedEvent = evt)
+            .Returns(Task.CompletedTask);
+
+        var notificationOutboxService = new Mock<INotificationOutboxService>();
+        notificationOutboxService
+            .InSequence(sequence)
+            .Setup(n => n.EnqueueAsync(It.IsAny<EnqueueNotificationRequest>(), cancellationToken))
+            .Callback<EnqueueNotificationRequest, CancellationToken>((req, _) => enqueuedNotification = req)
+            .ReturnsAsync(new NotificationEnqueueResult(NotificationEnqueueOutcome.Enqueued, Guid.NewGuid(), NotificationChannel.Email));
+
+        var lifecyclePlanner = new Mock<IAppointmentLifecyclePlanner>();
+        lifecyclePlanner
+            .InSequence(sequence)
+            .Setup(l => l.ScheduleForAppointmentAsync(
+                It.IsAny<Appointment>(),
+                scheduleBlock,
+                It.IsAny<Guid>(),
+                It.IsAny<DateTimeOffset?>(),
+                cancellationToken))
+            .ReturnsAsync(4);
+
         var unitOfWork = new Mock<IUnitOfWork>();
-        unitOfWork.Setup(w => w.SaveChangesAsync(cancellationToken)).ReturnsAsync(1);
-
-        // --- Configuración del IServiceScopeFactory Mock (Para el hilo en Background) ---
-        var serviceProvider = new Mock<IServiceProvider>();
-        
-        // Mock de las dependencias que el hilo interno pedirá
-        serviceProvider.Setup(x => x.GetService(typeof(IAiClinicalService))).Returns(Mock.Of<IAiClinicalService>());
-        serviceProvider.Setup(x => x.GetService(typeof(IAppointmentRepository))).Returns(Mock.Of<IAppointmentRepository>());
-        serviceProvider.Setup(x => x.GetService(typeof(IUnitOfWork))).Returns(Mock.Of<IUnitOfWork>());
-        serviceProvider.Setup(x => x.GetService(typeof(IPublishEndpoint))).Returns(Mock.Of<IPublishEndpoint>());
-        serviceProvider.Setup(x => x.GetService(typeof(ILogger<CreateAppointmentCommandHandler>)))
-            .Returns(Mock.Of<ILogger<CreateAppointmentCommandHandler>>());
-
-        var serviceScope = new Mock<IServiceScope>();
-        serviceScope.Setup(x => x.ServiceProvider).Returns(serviceProvider.Object);
-
-        var scopeFactory = new Mock<IServiceScopeFactory>();
-        scopeFactory.Setup(x => x.CreateScope()).Returns(serviceScope.Object);
-        // --------------------------------------------------------------------------------
+        unitOfWork
+            .InSequence(sequence)
+            .Setup(w => w.SaveChangesAsync(cancellationToken))
+            .ReturnsAsync(1);
 
         var handler = new CreateAppointmentCommandHandler(
             appointmentRepository.Object,
@@ -74,56 +99,93 @@ public class CreateAppointmentCommandHandlerTests
             unitOfWork.Object,
             scheduleBlockRepository.Object,
             staffRepository.Object,
-            Mock.Of<IAiClinicalService>(), // <- Añadido
-            Mock.Of<IPublishEndpoint>(),   // <- Añadido
-            scopeFactory.Object);
+            boxRepository.Object,
+            publishEndpoint.Object,
+            notificationOutboxService.Object,
+            lifecyclePlanner.Object,
+            Options.Create(new NotificationOptions { ClinicName = "Clínica Test" }));
 
         // Act
         var result = await handler.Handle(command, cancellationToken);
 
-        // Assert (Transacción inmediata)
+        // Assert
         result.Should().NotBe(Guid.Empty);
         addedAppointment.Should().NotBeNull();
         addedAppointment!.Id.Should().Be(result);
         addedAppointment.PatientId.Should().Be(patientId);
         addedAppointment.ScheduleBlockId.Should().Be(scheduleBlockId);
-        
-        // Verificamos que se guardó en la DB la fase 1
+
+        publishedEvent.Should().NotBeNull();
+        publishedEvent!.AppointmentId.Should().Be(result);
+        publishedEvent.CorrelationId.Should().NotBe(Guid.Empty);
+
+        enqueuedNotification.Should().NotBeNull();
+        enqueuedNotification!.AppointmentId.Should().Be(result);
+        enqueuedNotification.Type.Should().Be(NotificationType.AppointmentCreated);
+        enqueuedNotification.CorrelationId.Should().Be(publishedEvent.CorrelationId);
+        enqueuedNotification.Parameters.Should().NotContainKey("symptoms");
+        enqueuedNotification.Parameters.Values.Should().NotContain(v => v.Contains("Dolor de cabeza", StringComparison.OrdinalIgnoreCase));
+
         appointmentRepository.Verify(r => r.AddAppointmentAsync(It.IsAny<Appointment>(), cancellationToken), Times.Once);
+        publishEndpoint.Verify(p => p.Publish(It.IsAny<AppointmentCreated>(), cancellationToken), Times.Once);
+        notificationOutboxService.Verify(n => n.EnqueueAsync(It.IsAny<EnqueueNotificationRequest>(), cancellationToken), Times.Once);
+        lifecyclePlanner.Verify(
+            l => l.ScheduleForAppointmentAsync(
+                It.IsAny<Appointment>(),
+                scheduleBlock,
+                publishedEvent.CorrelationId,
+                It.IsAny<DateTimeOffset?>(),
+                cancellationToken),
+            Times.Once);
         unitOfWork.Verify(w => w.SaveChangesAsync(cancellationToken), Times.Once);
     }
 
     [Fact]
-    public async Task Handle_WhenPatientDoesNotExist_ThrowsInvalidOperationException()
+    public async Task Handle_WhenPatientDoesNotExist_ThrowsInvalidOperationExceptionAndPublishesNothing()
     {
-        // Arrange
         var cancellationToken = CancellationToken.None;
         var patientId = Guid.NewGuid();
         var command = new CreateAppointmentCommand(Guid.NewGuid(), patientId, "Dolor", "paciente");
-        
+
         var patientRepository = new Mock<IPatientRepository>();
         patientRepository.Setup(r => r.GetPatientByIdAsync(patientId, cancellationToken)).ReturnsAsync((Patient?)null);
-        
+
+        var publishEndpoint = new Mock<IPublishEndpoint>();
+        var notificationOutboxService = new Mock<INotificationOutboxService>();
+        var lifecyclePlanner = new Mock<IAppointmentLifecyclePlanner>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+
         var handler = new CreateAppointmentCommandHandler(
             Mock.Of<IAppointmentRepository>(),
             patientRepository.Object,
-            Mock.Of<IUnitOfWork>(),
+            unitOfWork.Object,
             Mock.Of<IScheduleBlockRepository>(),
             Mock.Of<IStaffRepository>(),
-            Mock.Of<IAiClinicalService>(), // <- Añadido
-            Mock.Of<IPublishEndpoint>(),   // <- Añadido
-            Mock.Of<IServiceScopeFactory>()); // Dummy inyectado
+            Mock.Of<IBoxRepository>(),
+            publishEndpoint.Object,
+            notificationOutboxService.Object,
+            lifecyclePlanner.Object,
+            Options.Create(new NotificationOptions()));
 
-        // Act
         Func<Task> act = () => handler.Handle(command, cancellationToken);
 
-        // Assert
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("El paciente no existe.");
+        publishEndpoint.Verify(p => p.Publish(It.IsAny<AppointmentCreated>(), It.IsAny<CancellationToken>()), Times.Never);
+        notificationOutboxService.Verify(n => n.EnqueueAsync(It.IsAny<EnqueueNotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        lifecyclePlanner.Verify(
+            l => l.ScheduleForAppointmentAsync(
+                It.IsAny<Appointment>(),
+                It.IsAny<ScheduleBlock>(),
+                It.IsAny<Guid>(),
+                It.IsAny<DateTimeOffset?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        unitOfWork.Verify(w => w.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_WhenScheduleBlockAlreadyOccupied_ThrowsDuplicateAppointmentException()
+    public async Task Handle_WhenScheduleBlockAlreadyOccupied_ThrowsDuplicateAppointmentExceptionAndPublishesNothing()
     {
         var cancellationToken = CancellationToken.None;
         var patientId = Guid.NewGuid();
@@ -146,19 +208,41 @@ public class CreateAppointmentCommandHandlerTests
         var scheduleBlockRepository = new Mock<IScheduleBlockRepository>();
         scheduleBlockRepository.Setup(r => r.GetByIdAsync(scheduleBlockId, cancellationToken)).ReturnsAsync(scheduleBlock);
 
+        var boxRepository = new Mock<IBoxRepository>();
+        boxRepository.Setup(r => r.GetByIdAsync(scheduleBlock.BoxId, cancellationToken))
+            .ReturnsAsync(Box.Create("Box 1", "Consulta", 1, "1"));
+
+        var publishEndpoint = new Mock<IPublishEndpoint>();
+        var notificationOutboxService = new Mock<INotificationOutboxService>();
+        var lifecyclePlanner = new Mock<IAppointmentLifecyclePlanner>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+
         var handler = new CreateAppointmentCommandHandler(
             appointmentRepository.Object,
             patientRepository.Object,
-            Mock.Of<IUnitOfWork>(),
+            unitOfWork.Object,
             scheduleBlockRepository.Object,
             Mock.Of<IStaffRepository>(),
-            Mock.Of<IAiClinicalService>(),
-            Mock.Of<IPublishEndpoint>(),
-            Mock.Of<IServiceScopeFactory>());
+            boxRepository.Object,
+            publishEndpoint.Object,
+            notificationOutboxService.Object,
+            lifecyclePlanner.Object,
+            Options.Create(new NotificationOptions()));
 
         var command = new CreateAppointmentCommand(scheduleBlockId, patientId, "Dolor", "paciente");
         Func<Task> act = () => handler.Handle(command, cancellationToken);
 
-        await act.Should().ThrowAsync<MedCareOS.Domain.Exceptions.DuplicateAppointmentException>();
+        await act.Should().ThrowAsync<DuplicateAppointmentException>();
+        publishEndpoint.Verify(p => p.Publish(It.IsAny<AppointmentCreated>(), It.IsAny<CancellationToken>()), Times.Never);
+        notificationOutboxService.Verify(n => n.EnqueueAsync(It.IsAny<EnqueueNotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        lifecyclePlanner.Verify(
+            l => l.ScheduleForAppointmentAsync(
+                It.IsAny<Appointment>(),
+                It.IsAny<ScheduleBlock>(),
+                It.IsAny<Guid>(),
+                It.IsAny<DateTimeOffset?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        unitOfWork.Verify(w => w.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }

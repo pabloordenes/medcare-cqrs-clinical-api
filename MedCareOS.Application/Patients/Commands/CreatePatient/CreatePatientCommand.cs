@@ -13,5 +13,8 @@ public record CreatePatientCommand(
     string Gender,
     string Phone,
     string Address,
-    string Neighbourhood
+    string Neighbourhood,
+    NotificationChannel PreferredChannel = NotificationChannel.Email,
+    bool WhatsAppOptIn = false,
+    string? ConsentSource = null
 ) : IRequest<Guid>;

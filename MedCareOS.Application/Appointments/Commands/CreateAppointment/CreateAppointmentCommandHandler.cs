@@ -1,14 +1,17 @@
-﻿using System.Text.Json;
-using MassTransit;
-using MedCareOS.Application.Common.Interfaces;
+﻿using MassTransit;
+using MedCareOS.Application.Appointments.Events;
+using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Common.Interfaces.Notifications;
+using MedCareOS.Application.Common.Options;
+using MedCareOS.Application.Notifications.Services;
+using MedCareOS.Application.Notifications.Templates;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Entities;
+using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Exceptions;
 using MedCareOS.Domain.Repositories;
 using MediatR;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Omro.Contracts.Events;
+using Microsoft.Extensions.Options;
 
 namespace MedCareOS.Application.Appointments.Commands.CreateAppointment;
 
@@ -19,24 +22,37 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly IUnitOfWork _unitOfWork;
     private readonly IScheduleBlockRepository _scheduleBlockRepository;
     private readonly IStaffRepository _staffRepository;
-    private readonly IAiClinicalService _aiClinicalService;
+    private readonly IBoxRepository _boxRepository;
     private readonly IPublishEndpoint _publishEndpoint;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly INotificationOutboxService _notificationOutboxService;
+    private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
+    private readonly NotificationOptions _notificationOptions;
+    private readonly IWaitingListOfferRepository? _waitingListOfferRepository;
 
-    public CreateAppointmentCommandHandler(IAppointmentRepository appointmentRepository,
-        IPatientRepository patientRepository, IUnitOfWork unitOfWork,
-        IScheduleBlockRepository scheduleBlockRepository, IStaffRepository staffRepository,
-        IAiClinicalService aiClinicalService, IPublishEndpoint publishEndpoint, 
-        IServiceScopeFactory scopeFactory)
+    public CreateAppointmentCommandHandler(
+        IAppointmentRepository appointmentRepository,
+        IPatientRepository patientRepository,
+        IUnitOfWork unitOfWork,
+        IScheduleBlockRepository scheduleBlockRepository,
+        IStaffRepository staffRepository,
+        IBoxRepository boxRepository,
+        IPublishEndpoint publishEndpoint,
+        INotificationOutboxService notificationOutboxService,
+        IAppointmentLifecyclePlanner lifecyclePlanner,
+        IOptions<NotificationOptions> notificationOptions,
+        IWaitingListOfferRepository? waitingListOfferRepository = null)
     {
         _appointmentRepository = appointmentRepository;
         _patientRepository = patientRepository;
         _unitOfWork = unitOfWork;
         _scheduleBlockRepository = scheduleBlockRepository;
         _staffRepository = staffRepository;
-        _aiClinicalService = aiClinicalService;
+        _boxRepository = boxRepository;
         _publishEndpoint = publishEndpoint;
-        _scopeFactory = scopeFactory;
+        _notificationOutboxService = notificationOutboxService;
+        _lifecyclePlanner = lifecyclePlanner;
+        _notificationOptions = notificationOptions.Value;
+        _waitingListOfferRepository = waitingListOfferRepository;
     }
 
     public async Task<Guid> Handle(CreateAppointmentCommand request, CancellationToken cancellationToken)
@@ -55,116 +71,92 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         else
         {
             patient = await _patientRepository.GetPatientByIdAsync(effectivePatientId, cancellationToken);
-            if (patient == null) throw new InvalidOperationException("El paciente no existe."); // futura excepcion personalizada
+            if (patient == null) throw new InvalidOperationException("El paciente no existe.");
         }
-        
+
         var scheduleBlock = await _scheduleBlockRepository.GetByIdAsync(request.ScheduleBlockId, cancellationToken);
         if (scheduleBlock == null) throw new InvalidOperationException("El bloque horario no existe.");
+
+        if (scheduleBlock.IsOverbook && !request.AllowOverbookBlock)
+            throw new DuplicateAppointmentException("No se puede agendar directamente sobre un bloque de sobrecupo.");
+
+        if (scheduleBlock.IsOverbook && !scheduleBlock.IsAvailableForBackfillOffer)
+            throw new DuplicateAppointmentException("El bloque de sobrecupo seleccionado ya no se encuentra disponible.");
+
+        if (scheduleBlock.StartTime <= DateTime.UtcNow)
+            throw new InvalidOperationException("No puedes agendar una cita en un bloque horario pasado.");
+
+        var box = await _boxRepository.GetByIdAsync(scheduleBlock.BoxId, cancellationToken);
+        if (box is null || !box.IsActive)
+            throw new InvalidOperationException("El box asignado al bloque horario no existe o está inactivo.");
 
         var blockOccupied = await _appointmentRepository.HasActiveAppointmentForBlockAsync(request.ScheduleBlockId, cancellationToken);
         if (blockOccupied)
             throw new DuplicateAppointmentException("El bloque horario seleccionado ya se encuentra reservado.");
 
+        if (_waitingListOfferRepository is not null &&
+            await _waitingListOfferRepository.HasActivePendingOfferForBlockAsync(request.ScheduleBlockId, DateTimeOffset.UtcNow, cancellationToken))
+        {
+            throw new DuplicateAppointmentException(
+                "El bloque horario se encuentra reservado temporalmente para una oferta activa de lista de espera.");
+        }
+
         var staff = await _staffRepository.GetByIdAsync(scheduleBlock.StaffId, cancellationToken);
         if (staff == null) throw new InvalidOperationException("El staff no existe.");
-        
+
         var newAppointment = Appointment.Create(
             request.ScheduleBlockId,
             effectivePatientId,
             request.SymptomsRaw,
             request.SchedulingSource);
-        
-        // guardamos la cita de inmediato
+
+        var correlationId = Guid.NewGuid();
+        var (appointmentDate, appointmentTime) = NotificationFormattingHelper.FormatAppointmentDateTime(
+            scheduleBlock.StartTime,
+            _notificationOptions.TimeZoneId);
+        var specialtyDisplay = NotificationFormattingHelper.ResolveSpecialtyDisplay(
+            staff.Specialty,
+            _notificationOptions.IncludeSpecialtyInMessages,
+            _notificationOptions.SensitiveSpecialtiesExcluded);
+
+        // Persistencia atómica: cita + AppointmentCreated + notificación T0 en la misma transacción vía Bus Outbox
         await _appointmentRepository.AddAppointmentAsync(newAppointment, cancellationToken);
+        await _publishEndpoint.Publish(
+            new AppointmentCreated(
+                AppointmentId: newAppointment.Id,
+                OccurredAtUtc: newAppointment.CreatedAt,
+                CorrelationId: correlationId),
+            cancellationToken);
+
+        await _notificationOutboxService.EnqueueAsync(
+            new EnqueueNotificationRequest(
+                TenantId: RiskThresholds.DefaultTenantId,
+                AppointmentId: newAppointment.Id,
+                Patient: patient,
+                Type: NotificationType.AppointmentCreated,
+                TemplateKey: DefaultNotificationTemplateCatalog.Keys.AppointmentCreated,
+                Locale: DefaultNotificationTemplateCatalog.DefaultLocale,
+                ScheduledFor: newAppointment.CreatedAt,
+                Parameters: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["patientFirstName"] = patient.FirstName,
+                    ["clinicName"] = _notificationOptions.ClinicName,
+                    ["appointmentDate"] = appointmentDate,
+                    ["appointmentTime"] = appointmentTime,
+                    ["specialtyDisplay"] = specialtyDisplay
+                },
+                CorrelationId: correlationId),
+            cancellationToken);
+
+        await _lifecyclePlanner.ScheduleForAppointmentAsync(
+            newAppointment,
+            scheduleBlock,
+            correlationId,
+            newAppointment.CreatedAt,
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
-        // extraemos variables primitivas para no arrastrar las entidades al otro hilo
-        var appointmentId = newAppointment.Id;
-        var patientDob = patient.DateOfBirth;
-        var patientGender = patient.Gender;
-        var blockStartTime = scheduleBlock.StartTime;
-        var staffSpecialty = staff.Specialty;
-        var symptomsRaw = request.SymptomsRaw;
-        var patientId = effectivePatientId;
-        
-        // ejecucion de ia en segundo plano
-        // FIRE-AND-FORGET
-        _ = Task.Run(async () =>
-        {
-            // creamos un ciclo de vida nuevo para que el DbContext no muera con el HTTP Request
-            using var scope = _scopeFactory.CreateScope();
-            
-            var aiService = scope.ServiceProvider.GetRequiredService<IAiClinicalService>();
-            var appRepo = scope.ServiceProvider.GetRequiredService<IAppointmentRepository>();
-            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var publisher = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<CreateAppointmentCommandHandler>>();
 
-            try
-            {
-                // reconstruimos la lógica matemática
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                int age = today.Year - patientDob.Year;
-                if (patientDob > today.AddYears(-age)) age--;
-
-                int daysOfWaiting = (blockStartTime.Date - DateTime.UtcNow.Date).Days;
-                if (daysOfWaiting < 0) daysOfWaiting = 0;
-
-                // usamos CancellationToken.None para que la tarea no se cancele al devolver el 200 OK
-                int previousAbsences = await appRepo.GetNoShowCountByPatientId(patientId, CancellationToken.None);
-
-                string specialtyNormalized = staffSpecialty?.Trim().ToLowerInvariant().Replace(" ", "_") ?? "medicina_general";
-
-                var predictRequest = new PredictRequestDto(
-                    appointmentId, age, patientGender, daysOfWaiting, specialtyNormalized, previousAbsences, "ninguno"
-                );
-
-                // llamadas a Python
-                var nlpTask = aiService.GetNlpSummaryAsync(appointmentId, symptomsRaw, CancellationToken.None);
-                var predictTask = aiService.PredictNoShowRiskAsync(predictRequest, CancellationToken.None);
-
-                await Task.WhenAll(nlpTask, predictTask);
-
-                var nlpResult = await nlpTask;
-                var predictResult = await predictTask;
-
-                string processedSymptomsJson = JsonSerializer.Serialize(nlpResult.ExtractedSymptoms);
-
-                // recuperamos la cita en este nuevo DbContext y la actualizamos
-                var appointmentToUpdate = await appRepo.GetAppointmentByIdAsync(appointmentId, CancellationToken.None);
-                if (appointmentToUpdate != null)
-                {
-                    appointmentToUpdate.ApplyNlpAnalysis(nlpResult.Summary, processedSymptomsJson);
-                    appointmentToUpdate.UpdateRiskScore(predictResult.RiskScore, predictResult.RiskBand);
-                    
-                    await uow.SaveChangesAsync(CancellationToken.None);
-                    logger.LogInformation("Análisis de IA completado y guardado para la cita {CitaId}", appointmentId);
-                }
-
-                // llamamos al orquestador si el riesgo es moderado o alto
-                if (predictResult.RiskBand == RiskThresholds.HighRiskBand || predictResult.RiskScore >= RiskThresholds.ModerateRiskMin)
-                {
-                    await publisher.Publish(
-                        new AnomalyDetected(
-                            TenantId: RiskThresholds.DefaultTenantId,
-                            CorrelationId: Guid.NewGuid(),
-                            AnomalyType: RiskThresholds.AppointmentNoShowAnomalyType,
-                            ResourceId: appointmentId,
-                            RiskProbability: predictResult.RiskScore,
-                            Attributes: new Dictionary<string, string>
-                            {
-                                ["riskBand"] = predictResult.RiskBand ?? string.Empty,
-                                ["specialty"] = specialtyNormalized
-                            }),
-                        CancellationToken.None);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Fallo catastrófico en el background worker de IA para la cita {CitaId}", appointmentId);
-            }
-        });
-        
         return newAppointment.Id;
     }
 }

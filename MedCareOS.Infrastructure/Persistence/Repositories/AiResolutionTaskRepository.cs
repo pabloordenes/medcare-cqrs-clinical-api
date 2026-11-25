@@ -37,4 +37,11 @@ public class AiResolutionTaskRepository : IAiResolutionTaskRepository
         return await _dbContext.AiResolutionTasks
             .FirstOrDefaultAsync(t => t.ResourceId == resourceId && t.Status == AiResolutionStatus.Pending, cancellationToken);
     }
+
+    public async Task<List<AiResolutionTask>> GetAllPendingByResourceIdAsync(Guid resourceId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.AiResolutionTasks
+            .Where(t => t.ResourceId == resourceId && t.Status == AiResolutionStatus.Pending)
+            .ToListAsync(cancellationToken);
+    }
 }

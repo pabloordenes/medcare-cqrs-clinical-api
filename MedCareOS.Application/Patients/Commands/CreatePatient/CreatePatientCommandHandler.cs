@@ -58,7 +58,10 @@ public class CreatePatientCommandHandler : IRequestHandler<CreatePatientCommand,
             request.Phone,
             request.Email,
             request.Address,
-            request.Neighbourhood
+            request.Neighbourhood,
+            request.PreferredChannel,
+            request.WhatsAppOptIn,
+            request.ConsentSource
         );
 
         _patientRepository.Add(newPatient);

@@ -1,3 +1,5 @@
+using MedCareOS.Application.Appointments.Lifecycle;
+using MedCareOS.Application.Resolutions.Services;
 using MedCareOS.Domain.Repositories;
 
 namespace MedCareOS.Api.BackgroundServices;
@@ -41,15 +43,33 @@ public class NoShowDetectionBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var appointmentRepository = scope.ServiceProvider.GetRequiredService<IAppointmentRepository>();
+        var lifecyclePlanner = scope.ServiceProvider.GetRequiredService<IAppointmentLifecyclePlanner>();
+        var supersedingService = scope.ServiceProvider.GetService<IAiResolutionSupersedingService>();
+        var shadowDecisionRepository = scope.ServiceProvider.GetService<IOverbookShadowDecisionRepository>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var expiredAppointments = await appointmentRepository.GetPastUnattendedAppointmentsAsync(DateTime.UtcNow, cancellationToken);
+        var utcNowOffset = DateTimeOffset.UtcNow;
+        var expiredAppointments = await appointmentRepository.GetPastUnattendedAppointmentsAsync(utcNowOffset.UtcDateTime, cancellationToken);
         if (expiredAppointments.Count == 0)
             return 0;
 
         foreach (var appointment in expiredAppointments)
         {
             appointment.MarkNoShow();
+            await lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "AppointmentNoShow", cancellationToken: cancellationToken);
+            if (supersedingService is not null)
+            {
+                await supersedingService.SupersedePendingForResourceAsync(appointment.Id, "AppointmentNoShow", cancellationToken);
+            }
+
+            if (shadowDecisionRepository is not null)
+            {
+                var shadowRows = await shadowDecisionRepository.GetUnresolvedByAppointmentIdAsync(appointment.Id, cancellationToken);
+                foreach (var shadowRow in shadowRows)
+                {
+                    shadowRow.ResolveOutcome(attended: false, utcNowOffset);
+                }
+            }
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
