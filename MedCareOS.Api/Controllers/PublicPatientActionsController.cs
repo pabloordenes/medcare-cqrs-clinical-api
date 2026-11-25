@@ -54,7 +54,9 @@ public class PublicPatientActionsController : ControllerBase
             appointmentTimeLocal = preview.AppointmentTimeLocal,
             specialty = preview.Specialty,
             allowedActions = preview.AllowedActions,
-            expiresAt = preview.ExpiresAt
+            expiresAt = preview.ExpiresAt,
+            waitingListOfferId = preview.WaitingListOfferId,
+            targetKind = preview.TargetKind
         });
     }
 

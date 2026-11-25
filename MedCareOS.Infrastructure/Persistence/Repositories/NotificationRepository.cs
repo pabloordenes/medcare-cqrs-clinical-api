@@ -46,6 +46,20 @@ public class NotificationRepository : INotificationRepository
                 cancellationToken);
     }
 
+    public async Task<bool> ExistsByWaitingListOfferAsync(
+        Guid waitingListOfferId,
+        NotificationType type,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Notifications
+            .AsNoTracking()
+            .AnyAsync(
+                n => n.WaitingListOfferId == waitingListOfferId
+                     && n.Type == type
+                     && n.Status != NotificationStatus.Cancelled,
+                cancellationToken);
+    }
+
     public async Task<Notification?> GetLatestActionableByPatientAsync(
         Guid patientId,
         CancellationToken cancellationToken = default)
@@ -53,7 +67,8 @@ public class NotificationRepository : INotificationRepository
         return await _dbContext.Notifications
             .AsNoTracking()
             .Where(n => n.PatientId == patientId
-                        && n.AppointmentId != null
+                        && (n.AppointmentId != null
+                            || (n.WaitingListOfferId != null && n.Type == NotificationType.WaitingListOffer))
                         && (n.Type == NotificationType.Reminder
                             || n.Type == NotificationType.FinalConfirmation
                             || n.Type == NotificationType.OverbookNotice

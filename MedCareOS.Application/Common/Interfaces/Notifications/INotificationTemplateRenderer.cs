@@ -16,4 +16,5 @@ public sealed record TemplateRenderRequest(
     string Locale,
     IReadOnlyDictionary<string, string> Parameters,
     IReadOnlyDictionary<string, string>? ActionUrls = null,
-    string? RescheduleTokenSuffix = null);
+    string? RescheduleTokenSuffix = null,
+    Guid? WaitingListOfferId = null);

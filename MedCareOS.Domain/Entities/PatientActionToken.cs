@@ -9,7 +9,8 @@ public class PatientActionToken
 
     public Guid Id { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
-    public Guid AppointmentId { get; private set; }
+    public Guid? AppointmentId { get; private set; }
+    public Guid? WaitingListOfferId { get; private set; }
     public Guid PatientId { get; private set; }
     public Guid? NotificationId { get; private set; }
     public PatientActionScope ActionScope { get; private set; }
@@ -39,6 +40,8 @@ public class PatientActionToken
             throw new ArgumentException("AppointmentId no puede estar vacío.", nameof(appointmentId));
         if (patientId == Guid.Empty)
             throw new ArgumentException("PatientId no puede estar vacío.", nameof(patientId));
+        if (scope == PatientActionScope.WaitingListOffer)
+            throw new ArgumentException("Use CreateForWaitingListOffer para tokens de oferta de lista de espera.", nameof(scope));
         if (expiresAt <= utcNow)
             throw new ArgumentException("La fecha de expiración debe ser futura.", nameof(expiresAt));
 
@@ -47,9 +50,44 @@ public class PatientActionToken
             Id = id,
             TokenHash = tokenHash.ToLowerInvariant(),
             AppointmentId = appointmentId,
+            WaitingListOfferId = null,
             PatientId = patientId,
             NotificationId = notificationId,
             ActionScope = scope,
+            ExpiresAt = expiresAt,
+            CreatedAt = utcNow
+        };
+    }
+
+    public static PatientActionToken CreateForWaitingListOffer(
+        Guid id,
+        string tokenHash,
+        Guid waitingListOfferId,
+        Guid patientId,
+        Guid? notificationId,
+        DateTimeOffset expiresAt,
+        DateTimeOffset utcNow)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("El Id del token no puede estar vacío.", nameof(id));
+        if (string.IsNullOrWhiteSpace(tokenHash) || tokenHash.Length != TokenHashLength)
+            throw new ArgumentException("El hash del token debe ser SHA-256 hex de 64 caracteres.", nameof(tokenHash));
+        if (waitingListOfferId == Guid.Empty)
+            throw new ArgumentException("WaitingListOfferId no puede estar vacío.", nameof(waitingListOfferId));
+        if (patientId == Guid.Empty)
+            throw new ArgumentException("PatientId no puede estar vacío.", nameof(patientId));
+        if (expiresAt <= utcNow)
+            throw new ArgumentException("La fecha de expiración debe ser futura.", nameof(expiresAt));
+
+        return new PatientActionToken
+        {
+            Id = id,
+            TokenHash = tokenHash.ToLowerInvariant(),
+            AppointmentId = null,
+            WaitingListOfferId = waitingListOfferId,
+            PatientId = patientId,
+            NotificationId = notificationId,
+            ActionScope = PatientActionScope.WaitingListOffer,
             ExpiresAt = expiresAt,
             CreatedAt = utcNow
         };

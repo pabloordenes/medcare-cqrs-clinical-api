@@ -91,6 +91,7 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<ScoreAppointmentConsumer, ScoreAppointmentConsumerDefinition>();
     x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
     x.AddConsumer<LateConfirmationReceivedConsumer, LateConfirmationReceivedConsumerDefinition>();
+    x.AddConsumer<MedCareOS.Application.WaitingLists.Consumers.OverbookOpenedConsumer, OverbookOpenedConsumerDefinition>();
 
     x.AddEntityFrameworkOutbox<ApplicationDbContext>(o =>
     {
@@ -271,9 +272,12 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IBoxRepository, BoxRepository>();
 builder.Services.AddScoped<IScheduleBlockRepository, ScheduleBlockRepository>();
 builder.Services.AddScoped<IWaitingListRepository, WaitingListRepository>();
+builder.Services.AddScoped<IWaitingListOfferRepository, WaitingListOfferRepository>();
 builder.Services.AddScoped<MedCareOS.Application.WaitingLists.Ranking.IWaitingListRanker, MedCareOS.Application.WaitingLists.Ranking.DeterministicWaitingListRanker>();
+builder.Services.AddScoped<IWaitingListBackfillService, MedCareOS.Application.WaitingLists.Services.WaitingListBackfillService>();
 builder.Services.AddScoped<IOverbookCollisionEventRepository, OverbookCollisionEventRepository>();
-builder.Services.AddScoped<IWaitingListOfferCancellationService, NoOpWaitingListOfferCancellationService>();
+builder.Services.AddScoped<IWaitingListOfferCancellationService, MedCareOS.Application.WaitingLists.Services.WaitingListOfferCancellationService>();
+builder.Services.AddSingleton<MedCareOS.Application.WaitingLists.Workers.IWaitingListOfferExpirationProcessor, MedCareOS.Application.WaitingLists.Workers.WaitingListOfferExpirationProcessor>();
 builder.Services.AddScoped<IOverbookCollisionResolutionService, OverbookCollisionResolutionService>();
 builder.Services.AddScoped<IAiResolutionTaskRepository, AiResolutionTaskRepository>();
 builder.Services.AddScoped<IAiResolutionSupersedingService, AiResolutionSupersedingService>();
@@ -354,6 +358,7 @@ builder.Services.AddHostedService<NoShowDetectionBackgroundService>();
 builder.Services.AddHostedService<ScoringRetryBackgroundService>();
 builder.Services.AddHostedService<NotificationRetentionBackgroundService>();
 builder.Services.AddHostedService<ScheduledActionsWorker>();
+builder.Services.AddHostedService<WaitingListOfferExpirationWorker>();
 
 builder.Services.AddHttpClient<IAiClinicalService, FastApiClinicalService>((serviceProvider, client) =>
 {

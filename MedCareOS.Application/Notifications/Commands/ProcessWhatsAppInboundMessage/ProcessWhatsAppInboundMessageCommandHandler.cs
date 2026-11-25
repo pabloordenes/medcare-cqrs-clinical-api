@@ -5,6 +5,8 @@ using MedCareOS.Application.Appointments.Risk;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Application.Notifications.Services;
 using MedCareOS.Application.Patients.Commands.RecordPatientOptOut;
+using MedCareOS.Application.WaitingLists.Commands.AcceptWaitingListOffer;
+using MedCareOS.Application.WaitingLists.Commands.DeclineWaitingListOffer;
 using MedCareOS.Domain.Entities;
 using MedCareOS.Domain.Enums;
 using MedCareOS.Domain.Repositories;
@@ -125,6 +127,7 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
         }
 
         Guid? targetAppointmentId = parsed.AppointmentId;
+        Guid? targetOfferId = parsed.WaitingListOfferId;
         Guid? sourceNotificationId = null;
         Guid? sourceCorrelationId = null;
 
@@ -140,18 +143,60 @@ public class ProcessWhatsAppInboundMessageCommandHandler : IRequestHandler<Proce
                 return;
             }
         }
-        else
+        else if (!targetOfferId.HasValue)
         {
             var latestNotification = await _notificationRepository.GetLatestActionableByPatientAsync(patient.Id, cancellationToken);
             targetAppointmentId = latestNotification?.AppointmentId;
+            if (!targetAppointmentId.HasValue && latestNotification?.Type == NotificationType.WaitingListOffer)
+            {
+                targetOfferId = latestNotification.WaitingListOfferId;
+            }
             sourceNotificationId = latestNotification?.Id;
             sourceCorrelationId = latestNotification?.CorrelationId;
+        }
+
+        if (targetOfferId.HasValue)
+        {
+            try
+            {
+                if (parsed.Intent == PatientReplyIntent.Confirm)
+                {
+                    await _sender.Send(
+                        new AcceptWaitingListOfferCommand(
+                            OfferId: targetOfferId.Value,
+                            RawToken: null,
+                            AuthenticatedUserId: null,
+                            ExpectedPatientId: patient.Id,
+                            Channel: "whatsapp"),
+                        cancellationToken);
+                }
+                else if (parsed.Intent == PatientReplyIntent.Cancel)
+                {
+                    await _sender.Send(
+                        new DeclineWaitingListOfferCommand(
+                            OfferId: targetOfferId.Value,
+                            RawToken: null,
+                            AuthenticatedUserId: null,
+                            ExpectedPatientId: patient.Id,
+                            Reason: "Rechazada por candidato vía WhatsApp."),
+                        cancellationToken);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Respuesta WhatsApp '{Intent}' ignorada para oferta {OfferId}.",
+                    parsed.Intent,
+                    targetOfferId.Value);
+            }
+            return;
         }
 
         if (!targetAppointmentId.HasValue)
         {
             _logger.LogInformation(
-                "Respuesta '{Intent}' de paciente {PatientId} sin cita accionable reciente asociada.",
+                "Respuesta '{Intent}' de paciente {PatientId} sin cita ni oferta accionable reciente asociada.",
                 parsed.Intent,
                 patient.Id);
             return;

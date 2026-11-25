@@ -51,7 +51,23 @@ public class NotificationOutboxService : INotificationOutboxService
             return new NotificationEnqueueResult(NotificationEnqueueOutcome.SkippedNoChannel);
         }
 
-        if (request.AppointmentId.HasValue)
+        if (request.WaitingListOfferId.HasValue)
+        {
+            var duplicateOfferNotif = await _notificationRepository.ExistsByWaitingListOfferAsync(
+                request.WaitingListOfferId.Value,
+                request.Type,
+                cancellationToken);
+
+            if (duplicateOfferNotif)
+            {
+                _logger.LogInformation(
+                    "Notificación duplicada de oferta omitida por idempotencia ({WaitingListOfferId}, {Type}).",
+                    request.WaitingListOfferId.Value,
+                    request.Type);
+                return new NotificationEnqueueResult(NotificationEnqueueOutcome.DuplicateSkipped);
+            }
+        }
+        else if (request.AppointmentId.HasValue)
         {
             var duplicate = await _notificationRepository.ExistsByIdempotencyKeyAsync(
                 request.AppointmentId.Value,
@@ -86,23 +102,28 @@ public class NotificationOutboxService : INotificationOutboxService
             templateParamsJson: paramsJson,
             scheduledFor: request.ScheduledFor,
             correlationId: request.CorrelationId,
-            utcNow: utcNow);
+            utcNow: utcNow,
+            waitingListOfferId: request.WaitingListOfferId);
 
         await _notificationRepository.AddAsync(notification, cancellationToken);
 
         if (request.ForceImmediateDispatch || request.ScheduledFor <= utcNow)
         {
-            await _publishEndpoint.Publish(
-                new SendNotificationRequested(
-                    NotificationId: notification.Id,
-                    CorrelationId: request.CorrelationId,
-                    OccurredAtUtc: utcNow),
-                cancellationToken);
+            var dispatchEvent = new SendNotificationRequested(
+                NotificationId: notification.Id,
+                CorrelationId: request.CorrelationId,
+                OccurredAtUtc: utcNow);
+
+            if (!request.DeferPublishToCaller)
+            {
+                await _publishEndpoint.Publish(dispatchEvent, cancellationToken);
+            }
 
             return new NotificationEnqueueResult(
                 NotificationEnqueueOutcome.Enqueued,
                 notification.Id,
-                effectiveChannel.Value);
+                effectiveChannel.Value,
+                request.DeferPublishToCaller ? dispatchEvent : null);
         }
 
         return new NotificationEnqueueResult(

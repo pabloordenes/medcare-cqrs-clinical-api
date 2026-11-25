@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Staff> Staffs { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<WaitingList> WaitingLists { get; set; }
+    public DbSet<WaitingListOffer> WaitingListOffers { get; set; }
     public DbSet<AiResolutionTask> AiResolutionTasks { get; set; }
     public DbSet<ReceptionTask> ReceptionTasks { get; set; }
     public DbSet<ProcessedWebhookKey> ProcessedWebhookKeys { get; set; }

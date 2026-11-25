@@ -7,7 +7,8 @@ namespace MedCareOS.Application.Notifications.Services;
 public sealed record ParsedPatientReply(
     PatientReplyIntent Intent,
     Guid? AppointmentId,
-    string NormalizedKeyword);
+    string NormalizedKeyword,
+    Guid? WaitingListOfferId = null);
 
 public static class PatientReplyKeywordParser
 {
@@ -60,6 +61,12 @@ public static class PatientReplyKeywordParser
             if (TryParseStructuredPayload(trimmedPayload, "DECLINE:", PatientReplyIntent.Cancel, out var declineParsed))
                 return declineParsed;
 
+            if (TryParseOfferPayload(trimmedPayload, "ACCEPT_OFFER:", PatientReplyIntent.Confirm, out var acceptOfferParsed))
+                return acceptOfferParsed;
+
+            if (TryParseOfferPayload(trimmedPayload, "DECLINE_OFFER:", PatientReplyIntent.Cancel, out var declineOfferParsed))
+                return declineOfferParsed;
+
             var payloadKeyword = NormalizeText(trimmedPayload);
             var payloadIntent = ClassifyKeyword(payloadKeyword);
             if (payloadIntent != PatientReplyIntent.Unknown)
@@ -69,6 +76,24 @@ public static class PatientReplyKeywordParser
         var normalizedText = NormalizeText(textBody);
         var textIntent = ClassifyKeyword(normalizedText);
         return new ParsedPatientReply(textIntent, null, normalizedText);
+    }
+
+    private static bool TryParseOfferPayload(
+        string payload,
+        string prefix,
+        PatientReplyIntent intent,
+        out ParsedPatientReply parsed)
+    {
+        if (payload.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = payload[prefix.Length..].Trim();
+            Guid? offerId = Guid.TryParse(suffix, out var guid) && guid != Guid.Empty ? guid : null;
+            parsed = new ParsedPatientReply(intent, null, prefix.TrimEnd(':').ToUpperInvariant(), offerId);
+            return true;
+        }
+
+        parsed = default!;
+        return false;
     }
 
     private static bool TryParseStructuredPayload(

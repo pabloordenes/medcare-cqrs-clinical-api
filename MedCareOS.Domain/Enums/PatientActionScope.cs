@@ -4,5 +4,6 @@ public enum PatientActionScope
 {
     ConfirmOrCancel,
     Reschedule,
-    OptOut
+    OptOut,
+    WaitingListOffer
 }

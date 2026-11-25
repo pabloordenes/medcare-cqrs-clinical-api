@@ -105,7 +105,7 @@ public partial class NotificationTemplateRenderer : INotificationTemplateRendere
             metaOrderedParams.Add(val);
         }
 
-        var buttons = defaultDef.BuildButtons(request.AppointmentId, request.RescheduleTokenSuffix);
+        var buttons = defaultDef.BuildButtons(request.AppointmentId, request.RescheduleTokenSuffix, request.WaitingListOfferId);
 
         return new RenderedNotification(
             Subject: renderedSubject,

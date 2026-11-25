@@ -27,6 +27,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
     private readonly INotificationOutboxService _notificationOutboxService;
     private readonly IAppointmentLifecyclePlanner _lifecyclePlanner;
     private readonly NotificationOptions _notificationOptions;
+    private readonly IWaitingListOfferRepository? _waitingListOfferRepository;
 
     public CreateAppointmentCommandHandler(
         IAppointmentRepository appointmentRepository,
@@ -38,7 +39,8 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         IPublishEndpoint publishEndpoint,
         INotificationOutboxService notificationOutboxService,
         IAppointmentLifecyclePlanner lifecyclePlanner,
-        IOptions<NotificationOptions> notificationOptions)
+        IOptions<NotificationOptions> notificationOptions,
+        IWaitingListOfferRepository? waitingListOfferRepository = null)
     {
         _appointmentRepository = appointmentRepository;
         _patientRepository = patientRepository;
@@ -50,6 +52,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         _notificationOutboxService = notificationOutboxService;
         _lifecyclePlanner = lifecyclePlanner;
         _notificationOptions = notificationOptions.Value;
+        _waitingListOfferRepository = waitingListOfferRepository;
     }
 
     public async Task<Guid> Handle(CreateAppointmentCommand request, CancellationToken cancellationToken)
@@ -90,6 +93,13 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         var blockOccupied = await _appointmentRepository.HasActiveAppointmentForBlockAsync(request.ScheduleBlockId, cancellationToken);
         if (blockOccupied)
             throw new DuplicateAppointmentException("El bloque horario seleccionado ya se encuentra reservado.");
+
+        if (_waitingListOfferRepository is not null &&
+            await _waitingListOfferRepository.HasActivePendingOfferForBlockAsync(request.ScheduleBlockId, DateTimeOffset.UtcNow, cancellationToken))
+        {
+            throw new DuplicateAppointmentException(
+                "El bloque horario se encuentra reservado temporalmente para una oferta activa de lista de espera.");
+        }
 
         var staff = await _staffRepository.GetByIdAsync(scheduleBlock.StaffId, cancellationToken);
         if (staff == null) throw new InvalidOperationException("El staff no existe.");

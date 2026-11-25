@@ -74,6 +74,41 @@ public class PatientActionTokenService : IPatientActionTokenService
         return new IssuedActionToken(tokenId, rawToken, expiresAt);
     }
 
+    public async Task<IssuedActionToken> IssueForWaitingListOfferAsync(
+        Guid waitingListOfferId,
+        Guid patientId,
+        Guid? notificationId,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default)
+    {
+        if (ttl <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(ttl), "El TTL del token debe ser mayor a cero.");
+
+        var utcNow = DateTimeOffset.UtcNow;
+        await _tokenRepository.RevokeActiveForWaitingListOfferAsync(waitingListOfferId, utcNow, cancellationToken);
+
+        var tokenId = Guid.NewGuid();
+        var tokenIdBytes = tokenId.ToByteArray();
+        var hmacBytes = ComputeHmac(tokenIdBytes);
+        var rawToken = $"{Base64Url.EncodeToString(tokenIdBytes)}.{Base64Url.EncodeToString(hmacBytes)}";
+        var tokenHash = ComputeSha256Hex(rawToken);
+        var expiresAt = utcNow.Add(ttl);
+
+        var entity = PatientActionToken.CreateForWaitingListOffer(
+            tokenId,
+            tokenHash,
+            waitingListOfferId,
+            patientId,
+            notificationId,
+            expiresAt,
+            utcNow);
+
+        await _tokenRepository.AddAsync(entity, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new IssuedActionToken(tokenId, rawToken, expiresAt);
+    }
+
     public async Task<ActionTokenPreviewResult> PreviewAsync(
         string rawToken,
         CancellationToken cancellationToken = default)
@@ -90,11 +125,64 @@ public class PatientActionTokenService : IPatientActionTokenService
         if (invalidStatus.HasValue)
             return new ActionTokenPreviewResult(false, invalidStatus.Value);
 
+        if (token!.WaitingListOfferId.HasValue)
+        {
+            var offerSummary = await (
+                from offer in _dbContext.WaitingListOffers.AsNoTracking()
+                join block in _dbContext.ScheduleBlocks.AsNoTracking() on offer.ScheduleBlockId equals block.Id
+                join staff in _dbContext.Staffs.AsNoTracking() on block.StaffId equals staff.Id
+                where offer.Id == token.WaitingListOfferId.Value && offer.PatientId == token.PatientId
+                select new
+                {
+                    offer.Id,
+                    offer.Status,
+                    offer.ExpiresAt,
+                    block.StartTime,
+                    block.IsOverbook,
+                    block.OverbookStatus,
+                    staff.Specialty
+                }
+            ).FirstOrDefaultAsync(cancellationToken);
+
+            var utcNowDate = utcNow.UtcDateTime;
+            if (offerSummary is null ||
+                offerSummary.Status != WaitingListOfferStatus.Pending ||
+                offerSummary.ExpiresAt <= utcNow ||
+                offerSummary.StartTime <= utcNowDate ||
+                (offerSummary.IsOverbook && offerSummary.OverbookStatus is not (OverbookBlockStatus.Open or OverbookBlockStatus.Offered)))
+            {
+                return new ActionTokenPreviewResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+            }
+
+            var (offerDateLocal, offerTimeLocal) = NotificationFormattingHelper.FormatAppointmentDateTime(
+                offerSummary.StartTime,
+                _options.TimeZoneId);
+
+            var offerSpecialtyDisplay = _options.IncludeSpecialtyInMessages
+                ? NotificationFormattingHelper.ResolveSpecialtyDisplay(
+                    offerSummary.Specialty,
+                    _options.IncludeSpecialtyInMessages,
+                    _options.SensitiveSpecialtiesExcluded)
+                : null;
+
+            return new ActionTokenPreviewResult(
+                IsValid: true,
+                ValidationStatus: ActionTokenValidationStatus.Valid,
+                ClinicName: _options.ClinicName,
+                AppointmentDateLocal: offerDateLocal,
+                AppointmentTimeLocal: offerTimeLocal,
+                Specialty: offerSpecialtyDisplay,
+                AllowedActions: [PatientReplyIntent.Confirm, PatientReplyIntent.Cancel, PatientReplyIntent.OptOut],
+                ExpiresAt: offerSummary.ExpiresAt < token.ExpiresAt ? offerSummary.ExpiresAt : token.ExpiresAt,
+                WaitingListOfferId: offerSummary.Id,
+                TargetKind: "WaitingListOffer");
+        }
+
         var summary = await (
             from app in _dbContext.Appointments.AsNoTracking()
             join block in _dbContext.ScheduleBlocks.AsNoTracking() on app.ScheduleBlockId equals block.Id
             join staff in _dbContext.Staffs.AsNoTracking() on block.StaffId equals staff.Id
-            where app.Id == token!.AppointmentId && app.PatientId == token.PatientId
+            where app.Id == token.AppointmentId && app.PatientId == token.PatientId
             select new
             {
                 app.Status,
@@ -120,7 +208,7 @@ public class PatientActionTokenService : IPatientActionTokenService
                 _options.SensitiveSpecialtiesExcluded)
             : null;
 
-        IReadOnlyList<PatientReplyIntent> allowedActions = token!.ActionScope switch
+        IReadOnlyList<PatientReplyIntent> allowedActions = token.ActionScope switch
         {
             PatientActionScope.ConfirmOrCancel => [PatientReplyIntent.Confirm, PatientReplyIntent.Cancel, PatientReplyIntent.OptOut],
             PatientActionScope.Reschedule => [PatientReplyIntent.OptOut],
@@ -136,7 +224,9 @@ public class PatientActionTokenService : IPatientActionTokenService
             AppointmentTimeLocal: timeLocal,
             Specialty: specialtyDisplay,
             AllowedActions: allowedActions,
-            ExpiresAt: token.ExpiresAt);
+            ExpiresAt: token.ExpiresAt,
+            WaitingListOfferId: null,
+            TargetKind: "Appointment");
     }
 
     public async Task<ActionTokenConsumeResult> ConsumeAsync(
@@ -161,14 +251,42 @@ public class PatientActionTokenService : IPatientActionTokenService
 
         if (requestedAction is PatientReplyIntent.Confirm or PatientReplyIntent.Cancel)
         {
-            var appointment = await _dbContext.Appointments
-                .AsNoTracking()
-                .FirstOrDefaultAsync(a => a.Id == token.AppointmentId && a.PatientId == token.PatientId, cancellationToken);
-
-            if (appointment is null ||
-                appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished or AppointmentStatus.InProgress)
+            if (token.WaitingListOfferId.HasValue)
             {
-                return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+                var offerState = await (
+                    from offer in _dbContext.WaitingListOffers.AsNoTracking()
+                    join block in _dbContext.ScheduleBlocks.AsNoTracking() on offer.ScheduleBlockId equals block.Id
+                    where offer.Id == token.WaitingListOfferId.Value && offer.PatientId == token.PatientId
+                    select new
+                    {
+                        offer.Status,
+                        offer.ExpiresAt,
+                        block.StartTime,
+                        block.IsOverbook,
+                        block.OverbookStatus
+                    }
+                ).FirstOrDefaultAsync(cancellationToken);
+
+                if (offerState is null ||
+                    offerState.Status != WaitingListOfferStatus.Pending ||
+                    offerState.ExpiresAt <= utcNow ||
+                    offerState.StartTime <= utcNow.UtcDateTime ||
+                    (offerState.IsOverbook && offerState.OverbookStatus is not (OverbookBlockStatus.Open or OverbookBlockStatus.Offered)))
+                {
+                    return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+                }
+            }
+            else
+            {
+                var appointment = await _dbContext.Appointments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(a => a.Id == token.AppointmentId && a.PatientId == token.PatientId, cancellationToken);
+
+                if (appointment is null ||
+                    appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow or AppointmentStatus.Finished or AppointmentStatus.InProgress)
+                {
+                    return new ActionTokenConsumeResult(false, ActionTokenValidationStatus.AppointmentNotActionable);
+                }
             }
         }
 
@@ -189,7 +307,8 @@ public class PatientActionTokenService : IPatientActionTokenService
             AppointmentId: token.AppointmentId,
             PatientId: token.PatientId,
             NotificationId: token.NotificationId,
-            ExecutedIntent: requestedAction);
+            ExecutedIntent: requestedAction,
+            WaitingListOfferId: token.WaitingListOfferId);
     }
 
     private bool TryVerifyRawToken(string rawToken, out Guid tokenId, out string tokenHash)
@@ -260,7 +379,8 @@ public class PatientActionTokenService : IPatientActionTokenService
 
     private static bool ScopeAllows(PatientActionScope scope, PatientReplyIntent intent) => intent switch
     {
-        PatientReplyIntent.Confirm or PatientReplyIntent.Cancel => scope == PatientActionScope.ConfirmOrCancel,
+        PatientReplyIntent.Confirm or PatientReplyIntent.Cancel
+            => scope is PatientActionScope.ConfirmOrCancel or PatientActionScope.WaitingListOffer,
         PatientReplyIntent.OptOut => true,
         _ => false
     };
