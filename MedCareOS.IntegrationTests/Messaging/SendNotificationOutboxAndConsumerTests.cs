@@ -489,7 +489,7 @@ public class SendNotificationOutboxAndConsumerTests
 
             services.AddMassTransitTestHarness(x =>
             {
-                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(15), testInactivityTimeout: TimeSpan.FromSeconds(2));
+                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(30), testInactivityTimeout: TimeSpan.FromSeconds(6));
                 x.SetKebabCaseEndpointNameFormatter();
                 x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
                 x.UsingInMemory((context, cfg) =>

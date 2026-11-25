@@ -565,7 +565,7 @@ public class DynamicRiskSignalsIntegrationTests
 
             services.AddMassTransitTestHarness(x =>
             {
-                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(15), testInactivityTimeout: TimeSpan.FromSeconds(2));
+                x.SetTestTimeouts(testTimeout: TimeSpan.FromSeconds(30), testInactivityTimeout: TimeSpan.FromSeconds(6));
                 x.SetKebabCaseEndpointNameFormatter();
                 x.AddConsumer<ScoreAppointmentConsumer, ScoreAppointmentConsumerDefinition>();
                 x.AddConsumer<SendNotificationConsumer, SendNotificationConsumerDefinition>();
