@@ -1,4 +1,6 @@
-﻿namespace MedCareOS.Application.Dashboard.Queries.GetMetrics;
+﻿using MedCareOS.Application.Overbooking.Queries.GetOverbookMetrics;
+
+namespace MedCareOS.Application.Dashboard.Queries.GetMetrics;
 
 public record ResumenKPIsDto(
     int TotalCitas,
@@ -69,5 +71,6 @@ public record DashboardAusentismoDto(
     List<DistribucionEstadoDto> Distribucion,
     List<AusentismoHorarioDto> PorHorario,
     EfectividadOmroDto Omro,
-    List<CitaRiesgoDto> AlertasRiesgo
+    List<CitaRiesgoDto> AlertasRiesgo,
+    OverbookMetricsDto? OverbookMetrics = null
 );

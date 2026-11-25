@@ -15,6 +15,7 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
     private readonly IOverbookCollisionResolutionService _collisionResolutionService;
     private readonly ITransactionalExecutor _transactionalExecutor;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOverbookShadowDecisionRepository? _shadowDecisionRepository;
 
     public CheckInAppointmentCommandHandler(
         IAppointmentRepository appointmentRepository,
@@ -22,7 +23,8 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
         IAiResolutionSupersedingService resolutionSupersedingService,
         IOverbookCollisionResolutionService collisionResolutionService,
         ITransactionalExecutor transactionalExecutor,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOverbookShadowDecisionRepository? shadowDecisionRepository = null)
     {
         _appointmentRepository = appointmentRepository;
         _lifecyclePlanner = lifecyclePlanner;
@@ -30,6 +32,7 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
         _collisionResolutionService = collisionResolutionService;
         _transactionalExecutor = transactionalExecutor;
         _unitOfWork = unitOfWork;
+        _shadowDecisionRepository = shadowDecisionRepository;
     }
 
     public async Task Handle(CheckInAppointmentCommand request, CancellationToken cancellationToken)
@@ -46,6 +49,16 @@ public class CheckInAppointmentCommandHandler : IRequestHandler<CheckInAppointme
                 await _lifecyclePlanner.CancelPendingActionsAsync(appointment.Id, "AppointmentCheckedIn", utcNow, ct);
                 await _resolutionSupersedingService.SupersedePendingForResourceAsync(appointment.Id, "AppointmentCheckedIn", ct);
                 await _collisionResolutionService.EvaluateDoubleCheckInAsync(appointment, utcNow, ct);
+
+                if (_shadowDecisionRepository is not null)
+                {
+                    var shadowRows = await _shadowDecisionRepository.GetUnresolvedByAppointmentIdAsync(appointment.Id, ct);
+                    foreach (var shadowRow in shadowRows)
+                    {
+                        shadowRow.ResolveOutcome(attended: true, utcNow);
+                    }
+                }
+
                 await _unitOfWork.SaveChangesAsync(ct);
             },
             cancellationToken);

@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
 using MedCareOS.Application.Interfaces;
+using MedCareOS.Application.Overbooking.Queries.GetOverbookMetrics;
 using MedCareOS.Domain.Constants;
 using MedCareOS.Domain.Enums;
+using MedCareOS.Domain.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,10 +12,14 @@ namespace MedCareOS.Application.Dashboard.Queries.GetMetrics;
 public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetricsQuery, DashboardAusentismoDto>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly IOverbookShadowDecisionRepository? _shadowDecisionRepository;
 
-    public GetDashboardMetricsQueryHandler(IApplicationDbContext dbContext)
+    public GetDashboardMetricsQueryHandler(
+        IApplicationDbContext dbContext,
+        IOverbookShadowDecisionRepository? shadowDecisionRepository = null)
     {
         _dbContext = dbContext;
+        _shadowDecisionRepository = shadowDecisionRepository;
     }
 
     public async Task<DashboardAusentismoDto> Handle(GetDashboardMetricsQuery request, CancellationToken cancellationToken)
@@ -142,6 +148,13 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
             ))
             .ToList();
 
+        OverbookMetricsDto? overbookMetrics = null;
+        if (_shadowDecisionRepository is not null)
+        {
+            var metricsHandler = new GetOverbookMetricsQueryHandler(_dbContext, _shadowDecisionRepository);
+            overbookMetrics = await metricsHandler.Handle(new GetOverbookMetricsQuery(RiskThresholds.DefaultTenantId), cancellationToken);
+        }
+
         return new DashboardAusentismoDto(
             Kpis: kpis,
             Tendencia: tendencia,
@@ -149,7 +162,8 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
             Distribucion: distribucion,
             PorHorario: porHorario,
             Omro: new EfectividadOmroDto(94.2m, 71.5m, 320, 285), // Hardcode por ahora hasta tener modulo de mensajeria
-            AlertasRiesgo: alertasRiesgo
+            AlertasRiesgo: alertasRiesgo,
+            OverbookMetrics: overbookMetrics
         );
     }
 }

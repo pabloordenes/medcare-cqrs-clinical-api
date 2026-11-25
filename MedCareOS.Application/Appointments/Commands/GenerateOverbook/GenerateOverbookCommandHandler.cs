@@ -24,6 +24,7 @@ public class GenerateOverbookCommandHandler : IRequestHandler<GenerateOverbookCo
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<GenerateOverbookCommandHandler> _logger;
+    private readonly IOverbookShadowDecisionRepository? _shadowDecisionRepository;
 
     public GenerateOverbookCommandHandler(
         IAppointmentRepository appointmentRepository,
@@ -36,7 +37,8 @@ public class GenerateOverbookCommandHandler : IRequestHandler<GenerateOverbookCo
         IReceptionTaskRepository receptionTaskRepository,
         IPublishEndpoint publishEndpoint,
         IUnitOfWork unitOfWork,
-        ILogger<GenerateOverbookCommandHandler> logger)
+        ILogger<GenerateOverbookCommandHandler> logger,
+        IOverbookShadowDecisionRepository? shadowDecisionRepository = null)
     {
         _appointmentRepository = appointmentRepository;
         _scheduleBlockRepository = scheduleBlockRepository;
@@ -49,6 +51,7 @@ public class GenerateOverbookCommandHandler : IRequestHandler<GenerateOverbookCo
         _publishEndpoint = publishEndpoint;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _shadowDecisionRepository = shadowDecisionRepository;
     }
 
     public async Task<GenerateOverbookResult> Handle(
@@ -253,6 +256,35 @@ public class GenerateOverbookCommandHandler : IRequestHandler<GenerateOverbookCo
         // 9. Salvaguarda de modo autónomo (E4-10)
         if (request.DecisionMode == OverbookDecisionMode.Autonomous && !policy.AutoOverbookEnabled)
         {
+            if (_shadowDecisionRepository is not null &&
+                !await _shadowDecisionRepository.ExistsForAppointmentAsync(originalAppointment.Id, cancellationToken))
+            {
+                var shadowPatient = await _patientRepository.GetPatientByIdAsync(originalAppointment.PatientId, cancellationToken);
+                var shadowStaff = await _staffRepository.GetByIdAsync(originalBlock.StaffId, cancellationToken);
+                var shadowExclusion = shadowPatient is not null && shadowStaff is not null
+                    ? ClinicalExclusionEvaluator.Evaluate(shadowPatient, shadowStaff, originalAppointment, policy, utcNow)
+                    : new ClinicalExclusionResult(false, ClinicalExclusionEvaluator.NoneCode, null);
+
+                var score = originalAppointment.EffectiveRiskScore ?? originalAppointment.CurrentBaseModelScore ?? 0m;
+                await _shadowDecisionRepository.AddAsync(
+                    OverbookShadowDecision.Create(
+                        tenantId: originalAppointment.TenantId,
+                        appointmentId: originalAppointment.Id,
+                        scheduleBlockId: originalAppointment.ScheduleBlockId,
+                        effectiveRiskScore: score,
+                        thresholdUsed: policy.AutoOverbookMinEffectiveScore,
+                        decision: shadowExclusion.IsExcluded ? "ShadowClinicalExclusion" : "ShadowWouldAutoOverbook",
+                        wouldHaveOverbooked: !shadowExclusion.IsExcluded && score >= policy.AutoOverbookMinEffectiveScore,
+                        finalNotificationDelivered: true,
+                        hasClinicalExclusion: shadowExclusion.IsExcluded,
+                        clinicalExclusionCode: shadowExclusion.Code,
+                        isSynthetic: false,
+                        evaluatedAtUtc: utcNow,
+                        correlationId: correlationId),
+                    cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
             return new GenerateOverbookResult(
                 Outcome: GenerateOverbookOutcome.AutonomousModeDisabled,
                 SourceAppointmentId: originalAppointment.Id,

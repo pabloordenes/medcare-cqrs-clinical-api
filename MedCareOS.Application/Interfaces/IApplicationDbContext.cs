@@ -25,6 +25,8 @@ public interface IApplicationDbContext
     DbSet<WaitingList> WaitingLists { get; }
     DbSet<WaitingListOffer> WaitingListOffers { get; }
     DbSet<AppointmentRescheduleHistory> AppointmentRescheduleHistories { get; }
+    DbSet<OverbookShadowDecision> OverbookShadowDecisions { get; }
+    DbSet<OverbookPolicyAuditLog> OverbookPolicyAuditLogs { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
