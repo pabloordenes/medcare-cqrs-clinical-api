@@ -225,7 +225,7 @@ public class ResolutionAndOverbookIdempotencyTests : IClassFixture<CustomApiFact
             SchedulingSource = "recepcion"
         });
 
-        firstBooking.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstBooking.StatusCode.Should().Be(HttpStatusCode.Accepted);
         secondBooking.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 

@@ -52,7 +52,7 @@ public class AppointmentsController : ControllerBase
         try
         {
             var appointmentId = await _sender.Send(effectiveCommand, cancellationToken);
-            return Ok(appointmentId);
+            return Accepted(appointmentId);
         }
         catch (DuplicateAppointmentException ex)
         {
