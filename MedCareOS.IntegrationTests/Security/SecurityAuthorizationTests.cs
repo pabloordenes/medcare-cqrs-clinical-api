@@ -113,7 +113,7 @@ public class SecurityAuthorizationTests : IClassFixture<CustomApiFactory>
             SchedulingSource = "paciente"
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var createdId = await response.Content.ReadFromJsonAsync<Guid>();
 
         using (var scope = _factory.Services.CreateScope())
