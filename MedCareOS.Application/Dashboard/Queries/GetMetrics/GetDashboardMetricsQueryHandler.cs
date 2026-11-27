@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text;
 using MedCareOS.Application.Interfaces;
 using MedCareOS.Application.Overbooking.Queries.GetOverbookMetrics;
 using MedCareOS.Domain.Constants;
@@ -54,73 +55,95 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
             .AsNoTracking()
             .CountAsync(t => t.Status == AiResolutionStatus.Approved || t.Status == AiResolutionStatus.Executed, cancellationToken);
 
-        // 2. IN-MEMORY SLICING: Cálculos base rápidos
-        int total = citasRaw.Count;
-        int asistidas = citasRaw.Count(c => c.ActualAttendance == true || c.Status == AppointmentStatus.Finished);
-        int inasistencias = citasRaw.Count(c => c.ActualAttendance == false || c.Status == AppointmentStatus.NoShow);
-        int canceladas = citasRaw.Count(c => c.Status == AppointmentStatus.Cancelled);
-        int pendientes = citasRaw.Count(c => c.Status == AppointmentStatus.Scheduled || c.Status == AppointmentStatus.Confirmed);
+        // 2. Clasificación mutuamente excluyente (cada cita cae en un único bucket)
+        var clasificadas = citasRaw.Select(c => new
+        {
+            Cita = c,
+            Bucket = ClassifyBucket(c.Status, c.ActualAttendance),
+            SpecialtyKey = NormalizeKey(c.Specialty)
+        }).ToList();
+
+        int total = clasificadas.Count;
+        int asistidas = clasificadas.Count(x => x.Bucket == DashboardBucket.Attended);
+        int inasistencias = clasificadas.Count(x => x.Bucket == DashboardBucket.NoShow);
+        int canceladas = clasificadas.Count(x => x.Bucket == DashboardBucket.Cancelled);
+        int pendientes = clasificadas.Count(x => x.Bucket == DashboardBucket.Pending);
 
         decimal tasaAsistencia = total == 0 ? 0 : Math.Round((decimal)asistidas / total * 100, 1);
         decimal tasaAusentismo = total == 0 ? 0 : Math.Round((decimal)inasistencias / total * 100, 1);
+        decimal tasaCanceladas = total == 0 ? 0 : Math.Round((decimal)canceladas / total * 100, 1);
+        decimal tasaPendientes = total == 0 ? 0 : Math.Round((decimal)pendientes / total * 100, 1);
         decimal impactoPerdida = inasistencias * 25000m;
 
         var kpis = new ResumenKPIsDto(total, tasaAsistencia, tasaAusentismo, -2.8m, rescatadas, inasistencias, impactoPerdida);
 
         // 3. PROYECCIONES DE LISTAS
-        
-        // A. Distribución (Gráfico de Dona)
+
+        // A. Distribución (Gráfico de Dona — siempre suma ~100%)
         var distribucion = new List<DistribucionEstadoDto>
         {
             new("Asistió", asistidas, tasaAsistencia, "#10B981"),
             new("No Asistió", inasistencias, tasaAusentismo, "#EF4444"),
-            new("Cancelada con Aviso", canceladas, total == 0 ? 0 : Math.Round((decimal)canceladas / total * 100, 1), "#3B82F6"),
-            new("Confirmada Pendiente", pendientes, total == 0 ? 0 : Math.Round((decimal)pendientes / total * 100, 1), "#F59E0B")
+            new("Cancelada con Aviso", canceladas, tasaCanceladas, "#3B82F6"),
+            new("Confirmada Pendiente", pendientes, tasaPendientes, "#F59E0B")
         };
 
-        // B. Por Especialidad (Barras Horizontales)
-        var porEspecialidad = citasRaw
-            .GroupBy(c => c.Specialty)
-            .Select(g => {
+        // B. Por Especialidad (agrupado sin tildes ni mayúsculas, mostrando la etiqueta mejor formateada)
+        var porEspecialidad = clasificadas
+            .GroupBy(x => x.SpecialtyKey)
+            .Select(g =>
+            {
+                var displayLabel = g
+                    .Select(x => x.Cita.Specialty.Trim())
+                    .OrderByDescending(HasDiacritics)
+                    .ThenByDescending(s => s.Length)
+                    .First();
+
                 int gTotal = g.Count();
-                int gAsist = g.Count(c => c.ActualAttendance == true || c.Status == AppointmentStatus.Finished);
-                int gInasist = g.Count(c => c.ActualAttendance == false || c.Status == AppointmentStatus.NoShow);
+                int gAsist = g.Count(x => x.Bucket == DashboardBucket.Attended);
+                int gInasist = g.Count(x => x.Bucket == DashboardBucket.NoShow);
                 decimal gTasa = gTotal == 0 ? 0 : Math.Round((decimal)gInasist / gTotal * 100, 1);
-                return new AusentismoEspecialidadDto(g.Key, gTotal, gAsist, gInasist, gTasa, "estable");
+                return new AusentismoEspecialidadDto(displayLabel, gTotal, gAsist, gInasist, gTasa, "estable");
             })
             .OrderByDescending(x => x.TasaAusentismo)
             .ToList();
 
         // C. Por Horario (Franjas Críticas)
-        var porHorario = citasRaw
-            .GroupBy(c => {
-                int h = c.StartTime.ToLocalTime().Hour;
+        var porHorario = clasificadas
+            .GroupBy(x =>
+            {
+                int h = x.Cita.StartTime.ToLocalTime().Hour;
                 if (h >= 8 && h < 10) return "08:00 - 10:00";
                 if (h >= 10 && h < 12) return "10:00 - 12:00";
                 if (h >= 12 && h < 14) return "12:00 - 14:00";
                 if (h >= 14 && h < 16) return "14:00 - 16:00";
                 return "16:00 - 18:00";
             })
-            .Select(g => {
+            .Select(g =>
+            {
                 int gTotal = g.Count();
-                int gInasist = g.Count(c => c.ActualAttendance == false || c.Status == AppointmentStatus.NoShow);
+                int gInasist = g.Count(x => x.Bucket == DashboardBucket.NoShow);
                 decimal gTasa = gTotal == 0 ? 0 : Math.Round((decimal)gInasist / gTotal * 100, 1);
                 return new AusentismoHorarioDto(g.Key, gTasa, gTotal);
             })
             .OrderBy(x => x.Franja)
             .ToList();
 
-        // D. Tendencia Temporal (Por Meses en formato local)
+        // D. Tendencia Temporal (ordenada cronológicamente: OCT -> NOV)
         var culturaEsp = new CultureInfo("es-ES");
-        var tendencia = citasRaw
-            .GroupBy(c => c.StartTime.ToString("MMM", culturaEsp)) // Ej: "sep", "oct", "nov"
-            .Select(g => {
+        var tendencia = clasificadas
+            .GroupBy(x => new { x.Cita.StartTime.Year, x.Cita.StartTime.Month })
+            .OrderBy(g => g.Key.Year)
+            .ThenBy(g => g.Key.Month)
+            .Select(g =>
+            {
+                var label = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMM", culturaEsp).ToUpperInvariant();
                 int gTotal = g.Count();
-                int gAsist = g.Count(c => c.ActualAttendance == true || c.Status == AppointmentStatus.Finished);
-                int gInasist = g.Count(c => c.ActualAttendance == false || c.Status == AppointmentStatus.NoShow);
-                int gCanc = g.Count(c => c.Status == AppointmentStatus.Cancelled);
+                int gAsist = g.Count(x => x.Bucket == DashboardBucket.Attended);
+                int gInasist = g.Count(x => x.Bucket == DashboardBucket.NoShow);
+                int gCanc = g.Count(x => x.Bucket == DashboardBucket.Cancelled);
                 decimal gTasa = gTotal == 0 ? 0 : Math.Round((decimal)gInasist / gTotal * 100, 1);
-                return new TendenciaTemporalDto(g.Key.ToUpper(), gAsist, gInasist, gCanc, gTasa);
+                return new TendenciaTemporalDto(label, gAsist, gInasist, gCanc, gTasa);
             })
             .ToList();
 
@@ -166,4 +189,42 @@ public class GetDashboardMetricsQueryHandler : IRequestHandler<GetDashboardMetri
             OverbookMetrics: overbookMetrics
         );
     }
+    
+    private enum DashboardBucket
+    {
+        Attended,
+        NoShow,
+        Cancelled,
+        Pending
+    }
+
+    private static DashboardBucket ClassifyBucket(AppointmentStatus status, bool? actualAttendance) => status switch
+    {
+        AppointmentStatus.Cancelled => DashboardBucket.Cancelled,
+        AppointmentStatus.NoShow => DashboardBucket.NoShow,
+        AppointmentStatus.Finished or AppointmentStatus.InProgress => DashboardBucket.Attended,
+        _ when actualAttendance == true => DashboardBucket.Attended,
+        _ when actualAttendance == false => DashboardBucket.NoShow,
+        _ => DashboardBucket.Pending
+    };
+
+    private static string NormalizeKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "sin_especialidad";
+
+        var decomposed = value.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        }
+
+        return sb.ToString().Normalize(NormalizationForm.FormC);
+    }
+
+    private static bool HasDiacritics(string value)
+        => value.Normalize(NormalizationForm.FormD)
+            .Any(ch => CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark);
 }
